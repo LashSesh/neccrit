@@ -2,7 +2,7 @@ from __future__ import annotations
 import base64
 import os
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import (
@@ -60,6 +60,7 @@ class State:
     PNs: int = 0
     skipped: Dict[Tuple[bytes, int], bytes] = field(default_factory=dict)
     max_skipped: int = 2000
+    processed: Set[Tuple[bytes, int]] = field(default_factory=set)
 
 
 class DoubleRatchet:
@@ -141,10 +142,20 @@ class DoubleRatchet:
         key = (header.dh_pub, header.n)
         if key in self.state.skipped:
             mk = self.state.skipped.pop(key)
+            self.state.processed.add(key)
             return fernet_key_from_mk(mk)
+        if key in self.state.processed:
+            raise ValueError("Duplicate message received")
         if self.state.dh_remote != header.dh_pub:
+            if self.state.dh_remote is not None:
+                if header.pn < self.state.Nr:
+                    raise ValueError("Duplicate message received")
+                self._skip_message_keys(header.pn, self.state.dh_remote)
             self.ratchet_step(header.dh_pub)
+        if header.n < self.state.Nr:
+            raise ValueError("Duplicate message received")
         self._skip_message_keys(header.n, header.dh_pub)
         self.state.CKr, mk = kdf_chain(self.state.CKr)
         self.state.Nr += 1
+        self.state.processed.add(key)
         return fernet_key_from_mk(mk)
