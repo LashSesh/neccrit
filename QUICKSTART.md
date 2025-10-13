@@ -90,21 +90,28 @@ python neccrit_pyqt6.py
 
 ## Starting a Chat Session
 
-1. **Both users**: Click "Start Chat" button
-   - Status should show "🟢 Connected"
+1. **Both users**: Click "▶️ Start Chat" button
+   - Status should show "🟢 Connected & Encrypted"
    - Message input should become enabled
 
-2. **Send a test message**
-   - Type "Hello!" in the message box
-   - Press Enter or click Send
+2. **(Optional) Enable AngelCore**
+   - In Settings tab, check "Enable AngelCore" checkbox
+   - AngelCore status bar will appear in Chat tab
+   - ⚠️ Warning: May block chat if suspicious activity detected
 
-3. **Verify reception**
+3. **Send a test message**
+   - Type "Hello!" in the message box
+   - Press Enter or click 🔐 Send
+
+4. **Verify reception**
    - The message should appear in both chat windows
    - Format: `[HH:MM:SS] Name: Message`
 
-## Understanding AngelCore Status
+## Understanding AngelCore Status (Optional Feature)
 
-The colored bar at the top shows surveillance detection status:
+**NEW**: AngelCore is now disabled by default. Enable it via checkbox in Settings tab.
+
+When enabled, the colored bar shows surveillance detection status:
 
 - **🛡️ AngelCore: Secure** (Green)
   - Normal operation
@@ -119,7 +126,7 @@ The colored bar at the top shows surveillance detection status:
   - Messages hidden (black on black)
   - Input disabled
 
-*Note: In the current version, AngelCore uses simulated metrics. Real implementation would use actual system monitoring.*
+*Note: AngelCore uses simulated metrics in the current version. If you experience frequent false positives or chat blocking, simply disable AngelCore in Settings. The dual-layer encryption still provides strong security.*
 
 ## Troubleshooting
 

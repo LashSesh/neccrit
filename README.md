@@ -12,11 +12,13 @@ A production-ready secure P2P chat application with dual-layer encryption (Tripo
 - **Dynamic Encryption**: Each message has unique masking and encryption parameters
 
 ### Application Features
-- **Modern PyQt6 GUI**: Professional, user-friendly interface
-- **AngelCore Monitoring**: Real-time surveillance detection
+- **Modern PyQt6 GUI**: Professional, user-friendly dark crypto-themed interface
+- **AngelCore Monitoring (Optional)**: Real-time surveillance detection
+  - **NOW OPTIONAL**: Enable/disable via checkbox in Settings tab
   - Monitors CPU load, RAM usage, mouse activity
   - Automatic visual camouflage when surveillance detected
   - Three states: SAFE (green), UNCERTAIN (yellow), ALERT (red)
+  - ⚠️ **Note**: When enabled, may block chat during suspicious activity detection
 - **QR Code Support**: Easy parameter sharing between peers
 - **Real-time Messaging**: Instant P2P message delivery
 - **Message History**: Full conversation history during session
@@ -124,9 +126,11 @@ Crypto Password: my_super_secret_password_2024  (same as Alice)
 - Alice connects to Bob: IP = Bob's IP, Port = 55556
 - Bob connects to Alice: IP = Alice's IP, Port = 55555
 
-## 🛡️ AngelCore Surveillance Detection
+## 🛡️ AngelCore Surveillance Detection (Optional)
 
-AngelCore continuously monitors system metrics to detect potential surveillance:
+**NEW**: AngelCore is now optional and can be enabled/disabled via checkbox in the Settings tab.
+
+When enabled, AngelCore continuously monitors system metrics to detect potential surveillance:
 
 - **SAFE (🛡️)**: Normal operation, all features enabled
 - **UNCERTAIN (⚠️)**: Suspicious activity detected, restricted mode
@@ -136,6 +140,13 @@ When in ALERT mode:
 - Message display is hidden (black on black)
 - Input is disabled
 - All content is obscured from observers
+
+**Important**: AngelCore is disabled by default. To enable it:
+1. Go to the Settings tab
+2. Check the "Enable AngelCore" checkbox under "Surveillance Detection"
+3. The AngelCore status bar will appear in the Chat tab
+
+**Note**: When AngelCore detects suspicious activity, it may block the chat interface for security reasons. If you experience frequent false positives, you can disable AngelCore and rely solely on the dual-layer encryption for security.
 
 ## 🎨 Architecture
 
