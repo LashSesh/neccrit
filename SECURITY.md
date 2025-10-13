@@ -21,8 +21,7 @@
 - Frame sizes are capped at 256 KiB, sockets enforce 10s timeouts, and connection attempts are rate-limited (20 per 30s per IP) to mitigate resource exhaustion.
 
 ## Reporting a Vulnerability
-- Please email `sebastian_klemm@icloud.com` with a detailed description, reproduction steps, and any proof-of-concept exploits. Encrypt communications when possible.
-- Alternatively, open a private report via GitHub Security Advisories for this project.
+- Open a private report via GitHub Security Advisories for this project.
 - We aim to acknowledge reports within 3 business days and provide status updates every 7 days until resolution.
 
 ## Supported Versions
