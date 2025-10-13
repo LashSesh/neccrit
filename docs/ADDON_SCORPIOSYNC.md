@@ -4,7 +4,7 @@
 
 The ScorpioSync addon provides **optional traffic-level camouflage** capabilities for n'éccrit, adding cover traffic generation, HTTP-mimicking, and zero-width steganography features. These functions operate **on top of the existing cryptographic layer** without modifying any core security mechanisms.
 
-**All cover traffic is still encrypted** through n'éccrit's standard Fernet-AEAD + X25519/HKDF protocol.
+**All cover traffic is still encrypted** through n'éccrit's standard AES-256-GCM + X25519/HKDF protocol.
 
 ---
 
@@ -302,7 +302,7 @@ Users are responsible for ensuring their use complies with applicable laws and r
 
 **This addon maintains all core security properties:**
 
-- ✅ Fernet-AEAD encryption still active
+- ✅ AES-256-GCM encryption still active
 - ✅ Scrypt KDF with salt still used
 - ✅ X25519/HKDF PFS still enforced
 - ✅ Replay protection still active

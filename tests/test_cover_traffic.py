@@ -13,6 +13,8 @@ from addons.scorpiosync_adapter import (
     maybe_transform_plaintext,
     send_cover_once,
     start_cover_traffic,
+    format_cover_signal,
+    is_cover_signal,
 )
 from addons.scorpiosync_generators_complete import steganography_decode
 
@@ -85,6 +87,16 @@ def test_maybe_transform_plaintext_with_stegano():
     assert decoded == f'"{text}"'  # JSON encoding adds quotes
 
 
+def test_cover_signal_helpers_round_trip():
+    """Cover signal helpers should identify formatted markers."""
+    marker = format_cover_signal("cover")
+    assert marker.startswith("[COVER:")
+    assert marker.endswith("]")
+    assert is_cover_signal(marker)
+    assert not is_cover_signal("[COVER:missing")
+    assert not is_cover_signal("regular message")
+
+
 def test_send_cover_once_requires_session():
     """Test that send_cover_once raises error without session."""
     import addons.scorpiosync_adapter as adapter
@@ -115,7 +127,7 @@ def test_send_cover_once_with_session():
     assert sent["peer_name"] == "peer1"
     
     # Message should indicate cover traffic
-    assert "[COVER:" in sent["msg"]
+    assert is_cover_signal(sent["msg"])
 
 
 def test_send_cover_once_with_http_mimicry():
