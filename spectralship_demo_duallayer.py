@@ -18,8 +18,7 @@ def input_kappa_theta(n=3):
     return kappa, theta
 
 if __name__ == "__main__":
-    print("Dual-Layer SPECTRALSHIP PrivacyChat-Demo
-")
+    print("Dual-Layer SPECTRALSHIP PrivacyChat-Demo\n")
     name = input("Dein Name: ").strip() or "User"
     port = int(input("Dein Port (z.B. 55555): ").strip() or "55555")
     code = input("Resonanzcode (gemeinsames Secret/Zahl): ").strip() or "1337"
