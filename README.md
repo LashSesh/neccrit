@@ -179,7 +179,8 @@ Plaintext Message
 
 ```
 neccrit/
-├── neccrit_pyqt6.py              # Production PyQt6 GUI (NEW)
+├── neccrit_pyqt6.py              # Production PyQt6 GUI
+├── run_neccrit.py                 # Application launcher
 ├── spectralship_engine_duallayer.py  # Core chat engine
 ├── spectralship_demo_duallayer.py    # CLI demo
 ├── oscillator_core.py             # Spectral profile generation
@@ -188,10 +189,9 @@ neccrit/
 ├── angelcore_spectralwatch.py     # Surveillance detection
 ├── qr_utils.py                    # QR code utilities
 ├── entropy_seed.py                # Entropy generation
-├── main.py                        # Legacy Kivy GUI
-├── main_with_angel.py             # Legacy PyQt6 prototype
-├── requirements.txt               # Python dependencies (NEW)
-└── README.md                      # This file (UPDATED)
+├── requirements.txt               # Python dependencies
+├── README.md                      # This file
+└── QUICKSTART.md                  # Quick start guide
 ```
 
 ## 🔧 Troubleshooting
@@ -225,10 +225,8 @@ sudo apt-get install libxcb-cursor0 libxcb-xinerama0
 python -m pytest tests/  # If tests exist
 ```
 
-### Legacy Versions
-- `main.py`: Original Kivy-based GUI
-- `main_with_angel.py`: Early PyQt6 prototype
-- `spectralship_demo_duallayer.py`: CLI version
+### Alternative Versions
+- `spectralship_demo_duallayer.py`: CLI version for testing or headless servers
 
 ## ⚠️ Security Disclaimer
 
