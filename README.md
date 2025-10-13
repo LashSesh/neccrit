@@ -1,6 +1,6 @@
 # n'éccrit - SPECTRALSHIP Dual-Layer Privacy Chat
 
-A production-ready secure P2P chat application with dual-layer encryption (Tripolar masking + AES/Fernet) and integrated surveillance detection (AngelCore).
+A secure P2P chat application with dual-layer encryption (Tripolar masking + AES/Fernet) and integrated surveillance detection (AngelCore).
 
 ## 🌟 Features
 
