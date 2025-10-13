@@ -37,8 +37,8 @@ surveillance awareness and cover traffic.
 ---
 
 ## Core Capabilities
-- 🔐 **Dual-layer protection** – Tripolar spectral masking plus AES-256/Fernet
-  encryption for every message.
+- 🔐 **Dual-layer protection** – Tripolar spectral masking plus Fernet
+  (AES-128-CBC with HMAC) encryption for every message.
 - 🛰️ **Peer-to-peer networking** – Direct TCP connections, connection guarding,
   and replay protection with per-peer message histories.
 - 🧠 **Surveillance awareness (optional)** – AngelCore heuristic sensor fusion to
@@ -66,7 +66,7 @@ Masked fragment
     ↓ (JSON serialization)
 Structured payload
     ↓ (X25519 + HKDF handshake → Fernet session key)
-AES-256/Fernet ciphertext
+Fernet (AES-128-CBC + HMAC) ciphertext
     ↓ (Length-prefixed TCP frame)
 Network transport
     ↓ (Peer decrypts & validates resonance code)
@@ -248,7 +248,8 @@ neccrit/
 
 ### Überblick
 n'éccrit ist ein experimentelles P2P-Chat-System, das Tripolar-Maskierung mit
-AES/Fernet-Verschlüsselung kombiniert. Es bietet eine PyQt6-Oberfläche,
+Fernet-Verschlüsselung (AES-128-CBC + HMAC) kombiniert. Es bietet eine
+PyQt6-Oberfläche,
 Kommandozeilen-Demo, optionale Cover-Traffic-Generatoren (ScorpioSync) und das
 Surveillance-Monitoring AngelCore.
 
