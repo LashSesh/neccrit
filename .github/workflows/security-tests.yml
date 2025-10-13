@@ -25,3 +25,11 @@ jobs:
         run: bandit -q -r .
       - name: Run pip-audit
         run: pip-audit
+      - name: Build core artifact and ensure addons excluded
+        run: |
+          scripts/build-core.sh
+          CORE=$(ls neccrit-core-*.tar.gz)
+          if tar -tzf "$CORE" | grep '^neccrit-core/addons/'; then
+            echo "addons directory must not be present in core artifact"
+            exit 1
+          fi

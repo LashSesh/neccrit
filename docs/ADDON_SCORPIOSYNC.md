@@ -53,14 +53,14 @@ Configuration is managed via `config.py`:
 
 ```python
 # Enable/disable cover traffic
-ENABLE_COVER_TRAFFIC = True
+ENABLE_COVER_TRAFFIC = False
 
 # Interval between cover packets (seconds)
 COVER_MIN_INTERVAL_S = 20
 COVER_MAX_INTERVAL_S = 45
 
 # Format as HTTP requests
-ENABLE_HTTP_MIMICRY = True
+ENABLE_HTTP_MIMICRY = False
 
 # Zero-width steganography (DISABLED by default)
 ENABLE_ZW_STEGANO = False
@@ -70,10 +70,10 @@ ENABLE_ZW_STEGANO = False
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `ENABLE_COVER_TRAFFIC` | `True` | Master switch for cover traffic generation |
+| `ENABLE_COVER_TRAFFIC` | `False` | Master switch for cover traffic generation |
 | `COVER_MIN_INTERVAL_S` | `20` | Minimum seconds between cover packets |
 | `COVER_MAX_INTERVAL_S` | `45` | Maximum seconds between cover packets |
-| `ENABLE_HTTP_MIMICRY` | `True` | Format packets as HTTP API requests |
+| `ENABLE_HTTP_MIMICRY` | `False` | Format packets as HTTP API requests |
 | `ENABLE_ZW_STEGANO` | `False` | Enable zero-width character steganography |
 
 ---
@@ -169,14 +169,14 @@ decoded = steganography_decode(hidden)
 
 ### Adapter Functions
 
-#### `set_active_node(node, peer_ip, peer_port, peer_name)`
+#### `set_active_session(node, peer_ip, peer_port, peer_name)`
 
 Configure the active SpectralNode and peer for cover traffic.
 
 ```python
-from addons.scorpiosync_adapter import set_active_node
+from core.transport import set_active_session
 
-set_active_node(my_node, "192.168.1.100", 5555, "peer_alice")
+set_active_session(my_node, "192.168.1.100", 5555, "peer_alice")
 ```
 
 ---
@@ -186,7 +186,7 @@ set_active_node(my_node, "192.168.1.100", 5555, "peer_alice")
 Check if a session is available for cover traffic transmission.
 
 ```python
-from addons.scorpiosync_adapter import is_session_ready
+from core.transport import is_session_ready
 
 if is_session_ready():
     print("Ready to send cover traffic")
@@ -247,7 +247,8 @@ pytest tests/test_cover_traffic.py -v
 
 ```python
 from spectralship_engine_duallayer import SpectralNode
-from addons.scorpiosync_adapter import set_active_node, start_cover_traffic
+from core.transport import set_active_session
+from addons.scorpiosync_adapter import start_cover_traffic
 import threading
 
 # Create node
@@ -264,7 +265,7 @@ node = SpectralNode(
 node.start_listening()
 
 # Configure cover traffic
-set_active_node(node, "192.168.1.100", 5556, "Bob")
+set_active_session(node, "192.168.1.100", 5556, "Bob")
 
 # Start cover traffic thread
 stop_flag = threading.Event()
@@ -327,7 +328,7 @@ Cover traffic payloads are treated as regular messages and pass through the full
 ### Cover traffic not sending
 
 ✅ Check `ENABLE_COVER_TRAFFIC = True` in config.py  
-✅ Ensure `set_active_node()` was called with valid peer info  
+✅ Ensure `set_active_session()` was called with valid peer info
 ✅ Verify node is running (`node.running = True`)  
 ✅ Check network connectivity to peer
 

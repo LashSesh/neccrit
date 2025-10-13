@@ -13,7 +13,7 @@ cover traffic generation, HTTP mimicry, and steganography.
 # Cover Traffic Configuration
 # ---------------------------
 # Enable periodic cover traffic to obfuscate communication patterns
-ENABLE_COVER_TRAFFIC = True
+ENABLE_COVER_TRAFFIC = False
 
 # Minimum interval between cover traffic packets (seconds)
 COVER_MIN_INTERVAL_S = 20
@@ -24,10 +24,18 @@ COVER_MAX_INTERVAL_S = 45
 # HTTP Mimicry
 # ------------
 # Format cover traffic as HTTP-like requests for better camouflage
-ENABLE_HTTP_MIMICRY = True
+ENABLE_HTTP_MIMICRY = False
 
 # Zero-Width Steganography
 # ------------------------
 # ⚠️ DISABLED BY DEFAULT - Use responsibly for legitimate research only
 # This feature embeds data in zero-width unicode characters
 ENABLE_ZW_STEGANO = False
+
+# Double Ratchet Session Layer
+# ----------------------------
+# Enable the Double Ratchet transport for forward secrecy and PCS by default.
+ENABLE_RATCHET = True
+
+LOCAL_CONFIG_PATH = "data/local_config.cfg"
+AUDIT_LOG_PATH = "data/audit.log"

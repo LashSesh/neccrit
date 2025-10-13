@@ -28,6 +28,7 @@ surveillance awareness and cover traffic.
 - [Critical Session Parameters](#critical-session-parameters)
 - [Cover Traffic & HTTP Mimicry](#cover-traffic--http-mimicry)
 - [AngelCore Surveillance Detection](#angelcore-surveillance-detection)
+- [Build Profiles: Core vs Research](#build-profiles-core-vs-research)
 - [Troubleshooting](#troubleshooting)
 - [Development Guide](#development-guide)
 - [Project Structure](#project-structure)
@@ -103,6 +104,12 @@ Key safeguards include:
 - **QR utilities** – Export/import of session parameters to reduce transcription
   errors when aligning peers.
 
+## Build Profiles: Core vs Research
+- **Core artifact** – Run `./scripts/build-core.sh` to produce `neccrit-core-<date>.tar.gz`. This archive omits `addons/` and
+  aligns with the default secure configuration. CI publishes and verifies that no addon modules ship in this artifact.
+- **Research artifact** – Run `./scripts/build-research.sh` to bundle optional cover-traffic and steganography modules along with
+  `RESEARCH_NOTICE.txt`. Consult [docs/USAGE_ADDONS.md](docs/USAGE_ADDONS.md) for opt-in instructions and responsible-use guidance.
+
 ## Installation
 1. Clone the repository:
    ```bash
@@ -161,15 +168,12 @@ A mismatch in any of the above will lead to decryption failures or messages bein
 silently dropped as non-resonant.
 
 ## Cover Traffic & HTTP Mimicry
-The ScorpioSync addon produces configurable dummy payloads:
-- Enable by editing `config.py`:
-  ```python
-  ENABLE_COVER_TRAFFIC = True
-  COVER_MIN_INTERVAL_S = 20
-  COVER_MAX_INTERVAL_S = 45
-  ENABLE_HTTP_MIMICRY = True
-  ENABLE_ZW_STEGANO = False  # Off by default for responsible use
-  ```
+The ScorpioSync addon produces configurable dummy payloads, HTTP-mimicking
+frames, and optional zero-width steganography. These features ship **disabled by
+default**. Use the opt-in tooling described in [docs/USAGE_ADDONS.md](docs/USAGE_ADDONS.md)
+to enable cover traffic locally with audit logging. The core artifacts exclude
+these modules entirely.
+
 - `addons/scorpiosync_generators_complete.py` contains packet templates and
   schedulers.
 - `example_cover_traffic_integration.py` demonstrates embedding the generators

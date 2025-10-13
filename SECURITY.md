@@ -27,3 +27,17 @@
 
 ## Supported Versions
 - Security updates currently target the `main` branch; legacy releases are unsupported. Consumers should track the changelog for hardening updates.
+
+## Add-ons: Dual-Use Notice & Safe Defaults
+
+The repository contains optional add-ons under `addons/` that provide cover-traffic and steganography
+features intended for research and defensive privacy studies. These modules are **disabled by default**.
+
+Operational rules:
+- Official core releases (artifact `neccrit-core-*.tar.gz`) exclude `addons/`.
+- To enable add-ons locally, use `python tools/enable_addons.py` and follow the confirmation prompt.
+- Steganography (`ENABLE_ZW_STEGANO`) requires a second explicit confirmation (`tools/enable_stegano.py`).
+- Each enabling action is logged locally in `data/audit.log`.
+- For distribution to third parties or enterprise use, prefer `neccrit-core` artifact or remove `addons/` entirely.
+
+If you are unsure about legal implications in your jurisdiction, consult legal counsel.
