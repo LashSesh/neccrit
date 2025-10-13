@@ -12,10 +12,10 @@ import json
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QLineEdit, QPushButton, QLabel, QGroupBox, QGridLayout,
-    QMessageBox, QFileDialog, QTabWidget, QScrollArea, QStatusBar
+    QMessageBox, QFileDialog, QTabWidget, QScrollArea, QStatusBar, QCheckBox
 )
 from PyQt6.QtCore import QTimer, pyqtSignal, QObject, Qt
-from PyQt6.QtGui import QPixmap, QImage
+from PyQt6.QtGui import QPixmap, QImage, QPalette, QColor
 
 from spectralship_engine_duallayer import SpectralNode
 from angelcore_spectralwatch import angelcore_decision
@@ -45,6 +45,7 @@ class NeccritMainWindow(QMainWindow):
         self.is_running = False
         self.signals = ChatSignals()
         self.angel_enabled = False
+        self.angel_thread = None
         
         # Connect signals
         self.signals.message_received.connect(self.on_message_received)
@@ -56,8 +57,10 @@ class NeccritMainWindow(QMainWindow):
         # Setup UI
         self.init_ui()
         
-        # Start AngelCore monitoring
-        self.start_angel_monitoring()
+        # Apply dark crypto theme
+        self.apply_crypto_theme()
+        
+        # Note: AngelCore is now optional and NOT started automatically
     
     def init_ui(self):
         """Initialize the user interface"""
@@ -74,32 +77,37 @@ class NeccritMainWindow(QMainWindow):
         
         # Status bar at top
         self.status_label = QLabel("🔴 Not Connected")
-        self.status_label.setStyleSheet("QLabel { font-weight: bold; padding: 5px; }")
+        self.status_label.setStyleSheet("QLabel { font-weight: bold; padding: 8px; font-size: 14px; background-color: #1a1a1a; color: #ff4444; border-radius: 4px; }")
         chat_layout.addWidget(self.status_label)
         
-        # AngelCore status
-        self.angel_label = QLabel("🛡️ AngelCore: Initializing...")
-        self.angel_label.setStyleSheet("QLabel { padding: 5px; background-color: #e8f5e9; }")
+        # AngelCore status (initially hidden)
+        self.angel_label = QLabel("🛡️ AngelCore: Disabled")
+        self.angel_label.setStyleSheet("QLabel { padding: 8px; background-color: #2a2a2a; color: #888888; border-radius: 4px; font-size: 12px; }")
+        self.angel_label.setVisible(False)  # Hidden by default
         chat_layout.addWidget(self.angel_label)
         
         # Message history
         history_group = QGroupBox("Message History")
+        history_group.setStyleSheet("QGroupBox { font-weight: bold; color: #00ff88; border: 2px solid #00ff88; border-radius: 6px; margin-top: 10px; padding-top: 10px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }")
         history_layout = QVBoxLayout()
         self.message_display = QTextEdit()
         self.message_display.setReadOnly(True)
-        self.message_display.setStyleSheet("QTextEdit { font-family: monospace; }")
+        self.message_display.setStyleSheet("QTextEdit { font-family: 'Courier New', monospace; background-color: #0a0a0a; color: #00ff88; border: 1px solid #00ff88; border-radius: 4px; padding: 8px; font-size: 13px; }")
         history_layout.addWidget(self.message_display)
         history_group.setLayout(history_layout)
         chat_layout.addWidget(history_group)
         
         # Message input
         input_group = QGroupBox("Send Message")
+        input_group.setStyleSheet("QGroupBox { font-weight: bold; color: #00ff88; border: 2px solid #00ff88; border-radius: 6px; margin-top: 10px; padding-top: 10px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }")
         input_layout = QHBoxLayout()
         self.message_input = QLineEdit()
-        self.message_input.setPlaceholderText("Type your message here...")
+        self.message_input.setPlaceholderText("Type your encrypted message here...")
+        self.message_input.setStyleSheet("QLineEdit { background-color: #0a0a0a; color: #00ff88; border: 1px solid #00ff88; border-radius: 4px; padding: 8px; font-family: 'Courier New', monospace; font-size: 13px; }")
         self.message_input.setEnabled(False)
         self.message_input.returnPressed.connect(self.send_message)
-        self.send_button = QPushButton("Send")
+        self.send_button = QPushButton("🔐 Send")
+        self.send_button.setStyleSheet("QPushButton { background-color: #00ff88; color: #000000; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; font-size: 13px; } QPushButton:hover { background-color: #00dd77; } QPushButton:pressed { background-color: #00bb66; } QPushButton:disabled { background-color: #333333; color: #666666; }")
         self.send_button.setEnabled(False)
         self.send_button.clicked.connect(self.send_message)
         input_layout.addWidget(self.message_input)
@@ -148,6 +156,14 @@ class NeccritMainWindow(QMainWindow):
         self.crypto_pw_input.setEchoMode(QLineEdit.EchoMode.Password)
         local_layout.addWidget(self.crypto_pw_input, 5, 1)
         
+        # AngelCore toggle
+        local_layout.addWidget(QLabel("Enable AngelCore:"), 6, 0)
+        self.angel_checkbox = QCheckBox("Surveillance Detection")
+        self.angel_checkbox.setStyleSheet("QCheckBox { color: #cccccc; } QCheckBox::indicator { width: 18px; height: 18px; }")
+        self.angel_checkbox.setToolTip("Enable real-time surveillance detection monitoring.\nWarning: May block chat when suspicious activity is detected.")
+        self.angel_checkbox.stateChanged.connect(self.on_angel_checkbox_changed)
+        local_layout.addWidget(self.angel_checkbox, 6, 1)
+        
         local_group.setLayout(local_layout)
         scroll_layout.addWidget(local_group)
         
@@ -173,9 +189,11 @@ class NeccritMainWindow(QMainWindow):
         # QR Code buttons
         qr_group = QGroupBox("QR Code")
         qr_layout = QHBoxLayout()
-        self.show_qr_button = QPushButton("Show My QR Code")
+        self.show_qr_button = QPushButton("📱 Show My QR Code")
+        self.show_qr_button.setStyleSheet("QPushButton { background-color: #2196F3; color: white; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; } QPushButton:hover { background-color: #1976D2; }")
         self.show_qr_button.clicked.connect(self.show_qr_code)
-        self.scan_qr_button = QPushButton("Load from QR Image")
+        self.scan_qr_button = QPushButton("📷 Load from QR Image")
+        self.scan_qr_button.setStyleSheet("QPushButton { background-color: #2196F3; color: white; border: none; border-radius: 4px; padding: 8px 16px; font-weight: bold; } QPushButton:hover { background-color: #1976D2; }")
         self.scan_qr_button.clicked.connect(self.load_qr_code)
         qr_layout.addWidget(self.show_qr_button)
         qr_layout.addWidget(self.scan_qr_button)
@@ -185,9 +203,11 @@ class NeccritMainWindow(QMainWindow):
         # Connection control
         control_group = QGroupBox("Connection")
         control_layout = QHBoxLayout()
-        self.start_button = QPushButton("Start Chat")
+        self.start_button = QPushButton("▶️ Start Chat")
+        self.start_button.setStyleSheet("QPushButton { background-color: #4CAF50; color: white; border: none; border-radius: 4px; padding: 10px 20px; font-weight: bold; font-size: 14px; } QPushButton:hover { background-color: #45a049; } QPushButton:disabled { background-color: #333333; color: #666666; }")
         self.start_button.clicked.connect(self.start_chat)
-        self.stop_button = QPushButton("Stop Chat")
+        self.stop_button = QPushButton("⏹️ Stop Chat")
+        self.stop_button.setStyleSheet("QPushButton { background-color: #f44336; color: white; border: none; border-radius: 4px; padding: 10px 20px; font-weight: bold; font-size: 14px; } QPushButton:hover { background-color: #da190b; } QPushButton:disabled { background-color: #333333; color: #666666; }")
         self.stop_button.clicked.connect(self.stop_chat)
         self.stop_button.setEnabled(False)
         control_layout.addWidget(self.start_button)
@@ -242,6 +262,92 @@ class NeccritMainWindow(QMainWindow):
         
         # Status bar
         self.statusBar().showMessage("Ready")
+    
+    def apply_crypto_theme(self):
+        """Apply dark crypto-themed styling to the application"""
+        # Set dark theme palette
+        dark_palette = QPalette()
+        dark_palette.setColor(QPalette.ColorRole.Window, QColor(25, 25, 25))
+        dark_palette.setColor(QPalette.ColorRole.WindowText, QColor(200, 200, 200))
+        dark_palette.setColor(QPalette.ColorRole.Base, QColor(15, 15, 15))
+        dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(35, 35, 35))
+        dark_palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(0, 0, 0))
+        dark_palette.setColor(QPalette.ColorRole.ToolTipText, QColor(200, 200, 200))
+        dark_palette.setColor(QPalette.ColorRole.Text, QColor(200, 200, 200))
+        dark_palette.setColor(QPalette.ColorRole.Button, QColor(35, 35, 35))
+        dark_palette.setColor(QPalette.ColorRole.ButtonText, QColor(200, 200, 200))
+        dark_palette.setColor(QPalette.ColorRole.BrightText, QColor(255, 0, 0))
+        dark_palette.setColor(QPalette.ColorRole.Link, QColor(0, 255, 136))
+        dark_palette.setColor(QPalette.ColorRole.Highlight, QColor(0, 255, 136))
+        dark_palette.setColor(QPalette.ColorRole.HighlightedText, QColor(0, 0, 0))
+        self.setPalette(dark_palette)
+        
+        # Apply stylesheet for additional styling
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #1a1a1a;
+            }
+            QTabWidget::pane {
+                border: 2px solid #00ff88;
+                border-radius: 6px;
+                background-color: #1a1a1a;
+            }
+            QTabBar::tab {
+                background-color: #2a2a2a;
+                color: #cccccc;
+                padding: 10px 20px;
+                margin: 2px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                font-weight: bold;
+            }
+            QTabBar::tab:selected {
+                background-color: #00ff88;
+                color: #000000;
+            }
+            QTabBar::tab:hover:!selected {
+                background-color: #3a3a3a;
+                color: #00ff88;
+            }
+            QGroupBox {
+                color: #cccccc;
+                border: 1px solid #444444;
+                border-radius: 4px;
+                margin-top: 10px;
+                padding-top: 10px;
+                font-weight: bold;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+            }
+            QLabel {
+                color: #cccccc;
+            }
+            QLineEdit {
+                background-color: #2a2a2a;
+                color: #cccccc;
+                border: 1px solid #444444;
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #00ff88;
+            }
+            QTextEdit {
+                background-color: #0a0a0a;
+                color: #00ff88;
+                border: 1px solid #00ff88;
+            }
+            QScrollArea {
+                border: none;
+            }
+            QStatusBar {
+                background-color: #2a2a2a;
+                color: #cccccc;
+            }
+        """)
     
     def get_params(self):
         """Get current parameters as dictionary"""
@@ -299,8 +405,8 @@ class NeccritMainWindow(QMainWindow):
             self.stop_button.setEnabled(True)
             self.message_input.setEnabled(True)
             self.send_button.setEnabled(True)
-            self.status_label.setText("🟢 Connected")
-            self.status_label.setStyleSheet("QLabel { font-weight: bold; padding: 5px; background-color: #c8e6c9; }")
+            self.status_label.setText("🟢 Connected & Encrypted")
+            self.status_label.setStyleSheet("QLabel { font-weight: bold; padding: 8px; font-size: 14px; background-color: #1a3a1a; color: #00ff88; border-radius: 4px; }")
             
             # Disable settings while running
             self.name_input.setEnabled(False)
@@ -329,8 +435,8 @@ class NeccritMainWindow(QMainWindow):
         self.stop_button.setEnabled(False)
         self.message_input.setEnabled(False)
         self.send_button.setEnabled(False)
-        self.status_label.setText("🔴 Not Connected")
-        self.status_label.setStyleSheet("QLabel { font-weight: bold; padding: 5px; }")
+        self.status_label.setText("🔴 Disconnected")
+        self.status_label.setStyleSheet("QLabel { font-weight: bold; padding: 8px; font-size: 14px; background-color: #1a1a1a; color: #ff4444; border-radius: 4px; }")
         
         # Re-enable settings
         self.name_input.setEnabled(True)
@@ -372,12 +478,12 @@ class NeccritMainWindow(QMainWindow):
     def on_message_received(self, sender, message):
         """Handle received message (runs in GUI thread)"""
         timestamp = time.strftime("%H:%M:%S")
-        self.message_display.append(f"<b>[{timestamp}] {sender}:</b> {message}")
+        self.message_display.append(f"<span style='color: #00aaff; font-weight: bold;'>[{timestamp}] {sender}:</span> <span style='color: #00ff88;'>{message}</span>")
     
     def on_message_sent(self, message):
         """Handle sent message (runs in GUI thread)"""
         timestamp = time.strftime("%H:%M:%S")
-        self.message_display.append(f"<b>[{timestamp}] You:</b> {message}")
+        self.message_display.append(f"<span style='color: #ffaa00; font-weight: bold;'>[{timestamp}] You:</span> <span style='color: #00ff88;'>{message}</span>")
     
     def on_error(self, error_msg):
         """Handle error (runs in GUI thread)"""
@@ -391,7 +497,7 @@ class NeccritMainWindow(QMainWindow):
     def add_system_message(self, message):
         """Add system message to display"""
         timestamp = time.strftime("%H:%M:%S")
-        self.message_display.append(f"<i style='color: gray;'>[{timestamp}] System: {message}</i>")
+        self.message_display.append(f"<i style='color: #888888;'>[{timestamp}] System: {message}</i>")
     
     def show_qr_code(self):
         """Show QR code for current parameters"""
@@ -446,8 +552,11 @@ class NeccritMainWindow(QMainWindow):
     
     def start_angel_monitoring(self):
         """Start AngelCore surveillance detection monitoring"""
+        if self.angel_enabled:
+            return  # Already running
+            
         def angel_loop():
-            while True:
+            while self.angel_enabled:
                 # Simulate inputs (in production, these would be real metrics)
                 cpu = random.randint(5, 80)
                 ram = random.randint(30, 90)
@@ -461,24 +570,49 @@ class NeccritMainWindow(QMainWindow):
                 time.sleep(5)  # Check every 5 seconds
         
         self.angel_enabled = True
-        threading.Thread(target=angel_loop, daemon=True).start()
+        self.angel_label.setVisible(True)
+        self.angel_thread = threading.Thread(target=angel_loop, daemon=True)
+        self.angel_thread.start()
+        self.add_system_message("AngelCore surveillance detection enabled")
+    
+    def stop_angel_monitoring(self):
+        """Stop AngelCore surveillance detection monitoring"""
+        self.angel_enabled = False
+        self.angel_label.setText("🛡️ AngelCore: Disabled")
+        self.angel_label.setStyleSheet("QLabel { padding: 8px; background-color: #2a2a2a; color: #888888; border-radius: 4px; font-size: 12px; }")
+        self.angel_label.setVisible(False)
+        # Reset message display styling if it was affected
+        self.message_display.setStyleSheet("QTextEdit { font-family: 'Courier New', monospace; background-color: #0a0a0a; color: #00ff88; border: 1px solid #00ff88; border-radius: 4px; padding: 8px; font-size: 13px; }")
+        if self.is_running:
+            self.message_input.setEnabled(True)
+        self.add_system_message("AngelCore surveillance detection disabled")
+    
+    def on_angel_checkbox_changed(self, state):
+        """Handle AngelCore checkbox state change"""
+        if state == Qt.CheckState.Checked.value:
+            self.start_angel_monitoring()
+        else:
+            self.stop_angel_monitoring()
     
     def on_angel_status_changed(self, status):
         """Handle AngelCore status change"""
+        if not self.angel_enabled:
+            return
+            
         if status == "ALERT":
             self.angel_label.setText("⚠️ ANGELCORE: Visual camouflage activated!")
-            self.angel_label.setStyleSheet("QLabel { padding: 5px; background-color: #ffcdd2; font-weight: bold; }")
+            self.angel_label.setStyleSheet("QLabel { padding: 8px; background-color: #3a1a1a; color: #ff4444; font-weight: bold; border-radius: 4px; font-size: 12px; }")
             self.message_display.setStyleSheet("QTextEdit { background-color: black; color: black; }")
             self.message_input.setEnabled(False)
         elif status == "UNCERTAIN":
             self.angel_label.setText("⚠️ AngelCore: Restricted mode")
-            self.angel_label.setStyleSheet("QLabel { padding: 5px; background-color: #fff9c4; }")
-            self.message_display.setStyleSheet("QTextEdit { background-color: gray; color: white; }")
+            self.angel_label.setStyleSheet("QLabel { padding: 8px; background-color: #3a3a1a; color: #ffaa00; border-radius: 4px; font-size: 12px; }")
+            self.message_display.setStyleSheet("QTextEdit { background-color: #1a1a1a; color: #888888; font-family: 'Courier New', monospace; }")
             self.message_input.setEnabled(False)
         else:  # SAFE
             self.angel_label.setText("🛡️ AngelCore: Secure")
-            self.angel_label.setStyleSheet("QLabel { padding: 5px; background-color: #e8f5e9; }")
-            self.message_display.setStyleSheet("QTextEdit { font-family: monospace; }")
+            self.angel_label.setStyleSheet("QLabel { padding: 8px; background-color: #1a3a1a; color: #00ff88; border-radius: 4px; font-size: 12px; }")
+            self.message_display.setStyleSheet("QTextEdit { font-family: 'Courier New', monospace; background-color: #0a0a0a; color: #00ff88; border: 1px solid #00ff88; border-radius: 4px; padding: 8px; font-size: 13px; }")
             if self.is_running:
                 self.message_input.setEnabled(True)
     
