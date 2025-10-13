@@ -19,6 +19,10 @@ A secure P2P chat application with dual-layer encryption (Tripolar masking + AES
   - Automatic visual camouflage when surveillance detected
   - Three states: SAFE (green), UNCERTAIN (yellow), ALERT (red)
   - ⚠️ **Note**: When enabled, may block chat during suspicious activity detection
+- **ScorpioSync Cover Traffic (Optional)**: Traffic camouflage and pattern obfuscation addon
+  - Periodic cover traffic to hide communication patterns
+  - HTTP mimicry for better blending
+  - Zero-width steganography (disabled by default)
 - **QR Code Support**: Easy parameter sharing between peers
 - **Real-time Messaging**: Instant P2P message delivery
 - **Message History**: Full conversation history during session
@@ -126,6 +130,32 @@ Crypto Password: my_super_secret_password_2024  (same as Alice)
 - Alice connects to Bob: IP = Bob's IP, Port = 55556
 - Bob connects to Alice: IP = Alice's IP, Port = 55555
 
+## 🎭 ScorpioSync Cover Traffic (Optional Addon)
+
+**NEW**: Optional addon for traffic-level camouflage and cover traffic generation.
+
+### Features
+- **Cover Traffic Generation**: Periodic dummy packets to obfuscate communication patterns
+- **HTTP Mimicry**: Format traffic to resemble normal API requests
+- **Zero-Width Steganography**: Optional data hiding in Unicode characters (disabled by default)
+
+### Configuration
+
+Enable in `config.py`:
+```python
+ENABLE_COVER_TRAFFIC = True
+COVER_MIN_INTERVAL_S = 20
+COVER_MAX_INTERVAL_S = 45
+ENABLE_HTTP_MIMICRY = True
+ENABLE_ZW_STEGANO = False  # Disabled by default
+```
+
+### Documentation
+
+See [docs/ADDON_SCORPIOSYNC.md](docs/ADDON_SCORPIOSYNC.md) for complete API reference, usage examples, and integration guide.
+
+**⚠️ Note**: All cover traffic is still encrypted through the standard crypto layer. Steganography is disabled by default for responsible use.
+
 ## 🛡️ AngelCore Surveillance Detection (Optional)
 
 **NEW**: AngelCore is now optional and can be enabled/disabled via checkbox in the Settings tab.
@@ -159,6 +189,7 @@ When in ALERT mode:
 5. **angelcore_spectralwatch.py**: Surveillance detection system
 6. **qr_utils.py**: QR code generation and parsing
 7. **neccrit_pyqt6.py**: Production PyQt6 GUI application
+8. **addons/scorpiosync_***: Optional cover traffic and traffic camouflage (see docs/ADDON_SCORPIOSYNC.md)
 
 ### Security Layers
 
@@ -200,7 +231,20 @@ neccrit/
 ├── angelcore_spectralwatch.py     # Surveillance detection
 ├── qr_utils.py                    # QR code utilities
 ├── entropy_seed.py                # Entropy generation
+├── config.py                      # Configuration for optional addons
+├── example_cover_traffic_integration.py  # Usage example
+├── addons/                        # Optional addons
+│   ├── scorpiosync_generators_complete.py  # Cover traffic generators
+│   └── scorpiosync_adapter.py     # Transport layer adapter
+├── docs/                          # Documentation
+│   └── ADDON_SCORPIOSYNC.md       # ScorpioSync addon guide
+├── tests/                         # Test suite
+│   ├── test_crypto.py
+│   ├── test_network_guards.py
+│   ├── test_addons_generators.py  # Addon generator tests
+│   └── test_cover_traffic.py      # Cover traffic integration tests
 ├── requirements.txt               # Python dependencies
+├── requirements-dev.txt           # Development dependencies
 ├── README.md                      # This file
 └── QUICKSTART.md                  # Quick start guide
 ```
