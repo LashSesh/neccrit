@@ -7,6 +7,8 @@ def tripolar_mask(fragment, kappa, theta, seed, t=None):
     fragment = np.array(fragment)
     if t is None:
         t = np.arange(len(fragment))
+    else:
+        t = np.array(t)
     mask = np.zeros_like(fragment, dtype=float)
     for i in range(len(kappa)):
         mask += kappa[i] * np.sin(seed * t + theta[i])
@@ -16,6 +18,8 @@ def tripolar_unmask(masked_fragment, kappa, theta, seed, t=None):
     masked_fragment = np.array(masked_fragment)
     if t is None:
         t = np.arange(len(masked_fragment))
+    else:
+        t = np.array(t)
     mask = np.zeros_like(masked_fragment, dtype=float)
     for i in range(len(kappa)):
         mask += kappa[i] * np.sin(seed * t + theta[i])
