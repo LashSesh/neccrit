@@ -24,7 +24,7 @@ if __name__ == "__main__":
     code = input("Resonanzcode (gemeinsames Secret/Zahl): ").strip() or "1337"
     n_pole = int(input("Anzahl Pole für Tripolar-Maske (mind. 3): ").strip() or "3")
     kappa, theta = input_kappa_theta(n_pole)
-    crypto_pw = input("AES/Fernet Passwort (Secret, beide Seiten gleich!): ").strip()
+    crypto_pw = input("AES-256-GCM Passwort (Secret, beide Seiten gleich!): ").strip()
     node = SpectralNode(name, port, code, kappa, theta, crypto_pw)
     node.start_listening()
     print("\nStarte weiteren Node im anderen Terminal/auf anderem Gerät und verbinde euch gegenseitig!")

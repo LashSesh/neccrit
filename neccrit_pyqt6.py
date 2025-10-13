@@ -230,14 +230,14 @@ class NeccritMainWindow(QMainWindow):
         <h2>n'éccrit - Secure Privacy Chat</h2>
         <h3>Features:</h3>
         <ul>
-            <li><b>Dual-Layer Security:</b> Tripolar masking + AES-256/Fernet encryption</li>
+            <li><b>Dual-Layer Security:</b> Tripolar masking + AES-256-GCM encryption</li>
             <li><b>P2P Architecture:</b> No central server, direct peer-to-peer communication</li>
             <li><b>AngelCore:</b> Surveillance detection monitoring CPU, RAM, and user activity</li>
             <li><b>Resonance Codes:</b> Shared secrets for message validation</li>
             <li><b>QR Code Support:</b> Easy parameter sharing via QR codes</li>
         </ul>
         <h3>How it works:</h3>
-        <p>Each message undergoes mathematical n-pole (tripolar) masking AND AES256/Fernet encryption.
+        <p>Each message undergoes mathematical n-pole (tripolar) masking AND AES-256-GCM authenticated encryption.
         Nobody can decipher messages with only one half of the security layers.</p>
         <h3>Security Notes:</h3>
         <ul>

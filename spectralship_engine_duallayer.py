@@ -23,6 +23,12 @@ from entropy_seed import generate_seed
 from tripolar_mask import tripolar_mask, tripolar_unmask
 from crypto_layer import decrypt_bytes, derive_handshake_psk, encrypt_bytes
 
+try:
+    from addons.scorpiosync_adapter import is_cover_signal
+except Exception:  # pragma: no cover - optional addon import
+    def is_cover_signal(message):
+        return False
+
 class SpectralNode:
     def __init__(self, name, port, resonance_code, kappa, theta, crypto_pw):
         self.name = name
@@ -203,9 +209,12 @@ class SpectralNode:
                                 frag = tripolar_unmask(masked, kappa, theta, seed, t)
                                 if self._resonant(frag):
                                     text = "".join([chr(int(round(x))) for x in frag if x>0 and x<1114111])
+                                    if is_cover_signal(text):
+                                        continue
                                     self.history.append((sender, text))
                                     print(f"[{self.name}] Von {sender}: {text}")
-                                    if on_receive: on_receive(sender, text)
+                                    if on_receive:
+                                        on_receive(sender, text)
                                 else:
                                     print(f"[{self.name}] Nicht resonant: Nachricht von {sender} ignoriert.")
                             except Exception as e:

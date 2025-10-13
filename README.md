@@ -37,8 +37,8 @@ surveillance awareness and cover traffic.
 ---
 
 ## Core Capabilities
-- 🔐 **Dual-layer protection** – Tripolar spectral masking plus Fernet
-  (AES-128-CBC with HMAC) encryption for every message.
+- 🔐 **Dual-layer protection** – Tripolar spectral masking plus AES-256-GCM
+  authenticated encryption for every message.
 - 🛰️ **Peer-to-peer networking** – Direct TCP connections, connection guarding,
   and replay protection with per-peer message histories.
 - 🧠 **Surveillance awareness (optional)** – AngelCore heuristic sensor fusion to
@@ -65,8 +65,8 @@ Spectral profile
 Masked fragment
     ↓ (JSON serialization)
 Structured payload
-    ↓ (X25519 + HKDF handshake → Fernet session key)
-Fernet (AES-128-CBC + HMAC) ciphertext
+    ↓ (X25519 + HKDF handshake → AES-256 session key)
+AES-256-GCM authenticated ciphertext
     ↓ (Length-prefixed TCP frame)
 Network transport
     ↓ (Peer decrypts & validates resonance code)
@@ -86,7 +86,7 @@ Key safeguards include:
 | `spectralship_engine_duallayer.py` | `SpectralNode` networking core, X25519 handshake, replay defense, tripolar masking integration. |
 | `oscillator_core.py` | FFT-based spectral profile generator. |
 | `tripolar_mask.py` | n-pole sinusoidal masking/unmasking utilities. |
-| `crypto_layer.py` | Scrypt-based key derivation, Fernet (AES-128 in CBC mode with HMAC) encryption, HKDF PSK derivation. |
+| `crypto_layer.py` | Scrypt-based key derivation, AES-256-GCM authenticated encryption, HKDF PSK derivation. |
 | `neccrit_pyqt6.py` | Production GUI with tabs for chat, settings, QR tooling, AngelCore controls. |
 | `spectralship_demo_duallayer.py` | Minimal CLI workflow for headless testing. |
 | `addons/scorpiosync_*.py` | Cover traffic generators and adapters. |
@@ -248,7 +248,7 @@ neccrit/
 
 ### Überblick
 n'éccrit ist ein experimentelles P2P-Chat-System, das Tripolar-Maskierung mit
-Fernet-Verschlüsselung (AES-128-CBC + HMAC) kombiniert. Es bietet eine
+AES-256-GCM-Authentifizierungsverschlüsselung kombiniert. Es bietet eine
 PyQt6-Oberfläche,
 Kommandozeilen-Demo, optionale Cover-Traffic-Generatoren (ScorpioSync) und das
 Surveillance-Monitoring AngelCore.

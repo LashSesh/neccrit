@@ -14,6 +14,21 @@ _active_node = None
 _peer_config = None
 
 
+COVER_SIGNAL_PREFIX = "[COVER:"
+COVER_SIGNAL_SUFFIX = "]"
+
+
+def format_cover_signal(frame_type: Optional[str]) -> str:
+    """Return a compact marker string used for cover-traffic fragments."""
+    sanitized = str(frame_type or "cover")
+    return f"{COVER_SIGNAL_PREFIX}{sanitized}{COVER_SIGNAL_SUFFIX}"
+
+
+def is_cover_signal(message: Optional[str]) -> bool:
+    """Return True when ``message`` represents a cover-traffic marker."""
+    return isinstance(message, str) and message.startswith(COVER_SIGNAL_PREFIX) and message.endswith(COVER_SIGNAL_SUFFIX)
+
+
 def set_active_node(node, peer_ip: str, peer_port: int, peer_name: str):
     """
     Configure the active node and peer for cover traffic transmission.
@@ -46,7 +61,7 @@ def send_encrypted_json(frame: dict):
     
     # Convert the cover frame to a message that can be sent via spectralship
     # We use a minimal signal to encode just the type information
-    cover_msg = f"[COVER:{frame.get('type', 'cover')}]"
+    cover_msg = format_cover_signal(frame.get('type', 'cover'))
     _active_node.send_fragment(
         cover_msg,
         _peer_config["ip"],

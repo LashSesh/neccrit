@@ -8,7 +8,7 @@
 
 ## Key Derivation
 - Password-based encryption now relies on Scrypt with parameters `N=2**15`, `r=8`, `p=1`, and `length=32` bytes.
-- Each encrypted payload stores a 16-byte random salt prepended to the ciphertext. The same salt must be supplied on decryption to recompute the Fernet key.
+- Each encrypted payload stores a 16-byte random salt and 12-byte nonce before the ciphertext. These values must be supplied on decryption to recompute the AES-256-GCM key stream.
 - Ephemeral session keys from X25519 handshakes are mixed with the Scrypt-derived PSK via HKDF (`SHA-256`, info `"neccrit session"`) to ensure forward secrecy even if long-term secrets leak.
 
 ## Handshake and QR Codes

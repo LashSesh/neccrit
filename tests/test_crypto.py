@@ -2,7 +2,7 @@ import json
 import secrets
 from pathlib import Path
 
-from crypto_layer import decrypt_bytes, encrypt_bytes
+from crypto_layer import NONCE_SIZE, SALT_SIZE, decrypt_bytes, encrypt_bytes
 
 
 def test_encrypt_decrypt_roundtrip():
@@ -12,8 +12,9 @@ def test_encrypt_decrypt_roundtrip():
     ciphertext_two = encrypt_bytes(data, password)
 
     assert ciphertext_one != data
-    assert ciphertext_one != ciphertext_two, "salts must randomize ciphertext"
+    assert ciphertext_one != ciphertext_two, "salts/nonces must randomize ciphertext"
     assert len(ciphertext_one) > len(data)
+    assert len(ciphertext_one) >= SALT_SIZE + NONCE_SIZE
 
     plaintext = decrypt_bytes(ciphertext_one, password)
     assert plaintext == data
