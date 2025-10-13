@@ -60,10 +60,11 @@ def main():
         print(f"   - Interval: {COVER_MIN_INTERVAL_S}-{COVER_MAX_INTERVAL_S}s")
         print(f"   - HTTP Mimicry: {ENABLE_HTTP_MIMICRY}")
         
-        from addons.scorpiosync_adapter import set_active_node, start_cover_traffic
+        from addons.scorpiosync_adapter import start_cover_traffic
+        from core.transport import set_active_session
         
         # Set the active session
-        set_active_node(node, peer_ip, peer_port, peer_name)
+        set_active_session(node, peer_ip, peer_port, peer_name)
         
         # Start cover traffic thread
         stop_flag = threading.Event()

@@ -16,12 +16,19 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import (
     X25519PublicKey,
 )
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    PublicFormat,
+)
 
 from oscillator_core import OscillatorCore
 from entropy_seed import generate_seed
 from tripolar_mask import tripolar_mask, tripolar_unmask
 from crypto_layer import decrypt_bytes, derive_handshake_psk, encrypt_bytes
+from config import ENABLE_RATCHET
+from core.ratchet_integration import RatchetSession
 
 try:
     from addons.scorpiosync_adapter import is_cover_signal
@@ -50,6 +57,8 @@ class SpectralNode:
         self.max_connections_per_window = 20
         self._connection_history = defaultdict(deque)
         self._rate_lock = threading.Lock()
+        self._ratchets = {}
+        self._ratchet_lock = threading.Lock()
 
     @staticmethod
     def _wipe(buffer: bytearray) -> None:
@@ -91,17 +100,24 @@ class SpectralNode:
             history.append(now)
         return True
 
-    def _derive_session_secret(self, shared_secret: bytes) -> str:
+    def _derive_session_material(self, shared_secret: bytes) -> tuple[str, bytes]:
         psk_material = bytearray(derive_handshake_psk(self.crypto_pw))
         try:
-            hkdf = HKDF(
+            hkdf_session = HKDF(
                 algorithm=hashes.SHA256(),
                 length=32,
                 salt=bytes(psk_material),
                 info=b"neccrit session",
             )
-            session_key = hkdf.derive(shared_secret)
-            return base64.urlsafe_b64encode(session_key).decode("ascii")
+            session_key = hkdf_session.derive(shared_secret)
+            hkdf_root = HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=bytes(psk_material),
+                info=b"neccrit-root",
+            )
+            root_key = hkdf_root.derive(shared_secret)
+            return base64.urlsafe_b64encode(session_key).decode("ascii"), root_key
         finally:
             self._wipe(psk_material)
 
@@ -129,6 +145,46 @@ class SpectralNode:
                 store.popitem(last=False)
         return True
 
+    def _ensure_ratchet_for_send(self, peer_name: str, peer_ip: str, handshake_ctx) -> RatchetSession:
+        keys = [f"name:{peer_name}", f"ip:{peer_ip}"]
+        with self._ratchet_lock:
+            ratchet = None
+            for key in keys:
+                ratchet = self._ratchets.get(key)
+                if ratchet is not None:
+                    break
+            if ratchet is None:
+                ratchet = RatchetSession(
+                    handshake_ctx["root_key"],
+                    True,
+                    handshake_ctx.get("peer_dh_pub"),
+                    handshake_ctx.get("local_dh_priv"),
+                )
+            for key in keys:
+                self._ratchets[key] = ratchet
+            return ratchet
+
+    def _ensure_ratchet_for_receive(self, peer_ip: str, handshake_ctx) -> RatchetSession:
+        key = f"ip:{peer_ip}"
+        with self._ratchet_lock:
+            ratchet = self._ratchets.get(key)
+            if ratchet is None:
+                ratchet = RatchetSession(
+                    handshake_ctx["root_key"],
+                    False,
+                    handshake_ctx.get("peer_dh_pub"),
+                    handshake_ctx.get("local_dh_priv"),
+                )
+                self._ratchets[key] = ratchet
+            return ratchet
+
+    def _register_ratchet_alias(self, alias: str, session: RatchetSession) -> None:
+        if not alias:
+            return
+        key = f"name:{alias}"
+        with self._ratchet_lock:
+            self._ratchets[key] = session
+
     def _handshake_initiator(self, conn: socket.socket) -> str:
         private_key = X25519PrivateKey.generate()
         public_bytes = private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
@@ -147,7 +203,14 @@ class SpectralNode:
             raise ValueError("Handshake Nonce stimmt nicht überein")
         peer_pub = base64.b64decode(response["public_key"])
         shared_secret = private_key.exchange(X25519PublicKey.from_public_bytes(peer_pub))
-        return self._derive_session_secret(shared_secret)
+        session_secret, root_key = self._derive_session_material(shared_secret)
+        local_priv = private_key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+        return {
+            "session_secret": session_secret,
+            "root_key": root_key,
+            "peer_dh_pub": peer_pub,
+            "local_dh_priv": local_priv,
+        }
 
     def _handshake_responder(self, conn: socket.socket) -> str:
         message = json.loads(self._recv_frame(conn).decode("utf-8"))
@@ -165,7 +228,14 @@ class SpectralNode:
             "version": 1,
         }
         self._send_frame(conn, json.dumps(handshake_ack).encode("utf-8"))
-        return self._derive_session_secret(shared_secret)
+        session_secret, root_key = self._derive_session_material(shared_secret)
+        local_priv = private_key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+        return {
+            "session_secret": session_secret,
+            "root_key": root_key,
+            "peer_dh_pub": peer_pub,
+            "local_dh_priv": local_priv,
+        }
 
     def _resonant(self, fragment):
         s = sum(fragment)
@@ -191,11 +261,19 @@ class SpectralNode:
                             continue
                         conn.settimeout(self.socket_timeout)
                         with conn:
-                            session_secret = self._handshake_responder(conn)
-                            ciphertext = self._recv_frame(conn)
+                            handshake_ctx = self._handshake_responder(conn)
+                            frame_bytes = self._recv_frame(conn)
                             try:
-                                payload_raw = decrypt_bytes(ciphertext, session_secret)
-                                payload = json.loads(payload_raw.decode("utf-8"))
+                                if ENABLE_RATCHET:
+                                    ratchet = self._ensure_ratchet_for_receive(addr[0], handshake_ctx)
+                                    frame_obj = json.loads(frame_bytes.decode("utf-8"))
+                                    payload = ratchet.decrypt_frame(frame_obj)
+                                    self._register_ratchet_alias(payload.get("sender"), ratchet)
+                                else:
+                                    payload_raw = decrypt_bytes(
+                                        frame_bytes, handshake_ctx["session_secret"]
+                                    )
+                                    payload = json.loads(payload_raw.decode("utf-8"))
                                 peer_id = (addr[0], payload.get("sender"))
                                 if not self._record_message(peer_id, payload.get("msg_id"), payload.get("ts")):
                                     print(f"[{self.name}] Replay oder zu alte Nachricht von {payload.get('sender')}.")
@@ -244,9 +322,14 @@ class SpectralNode:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(self.socket_timeout)
             s.connect((peer_ip, peer_port))
-            session_secret = self._handshake_initiator(s)
-            ciphertext = encrypt_bytes(payload_json, session_secret)
-            self._send_frame(s, ciphertext)
+            handshake_ctx = self._handshake_initiator(s)
+            if ENABLE_RATCHET:
+                ratchet = self._ensure_ratchet_for_send(peer_name, peer_ip, handshake_ctx)
+                frame = ratchet.encrypt_frame(payload)
+                frame_bytes = json.dumps(frame).encode("utf-8")
+            else:
+                frame_bytes = encrypt_bytes(payload_json, handshake_ctx["session_secret"])
+            self._send_frame(s, frame_bytes)
         print(f"[{self.name}] Nachricht an {peer_name} gesendet!")
 
     def show_history(self):
