@@ -1,4 +1,0 @@
-RESEARCH NOTICE
-This artifact includes optional addon modules that enable cover traffic and steganographic transforms.
-These features are provided for research and defensive privacy studies only. They are disabled by default
-and require explicit local opt-in. By using these features you accept responsibility for lawful use.

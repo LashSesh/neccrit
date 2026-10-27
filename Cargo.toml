@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = ["crates/neccrit-core", "crates/neccrit-cli"]
+
+[workspace.package]
+version = "0.2.0-alpha.1"
+edition = "2024"
+rust-version = "1.94"
+license = "Apache-2.0"
+repository = "https://github.com/LashSesh/neccrit"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+
+# Key derivation and the hybrid handshake are painfully slow without
+# optimisations; keep debug builds and `cargo test` usable.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"

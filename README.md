@@ -1,300 +1,247 @@
-# n'éccrit – Spectralship Dual-Layer Privacy Chat
+# neccrit
 
-n'éccrit is an experimental peer-to-peer (P2P) secure messaging stack that mixes
-mathematical signal masking with modern cryptography, system camouflage, and
-traffic obfuscation. The project bundles a production-ready PyQt6 desktop GUI, a
-command-line demo, reusable crypto/transport primitives, and optional addons for
-surveillance awareness and cover traffic.
+**neccrit** is an end-to-end encrypted, peer-to-peer messenger for people who
+know each other. There are no servers, no accounts and no phone numbers: two
+people exchange invite codes, compare a safety number once, and talk directly
+– optionally over Tor so that nobody, not even the contact, learns their IP
+address.
 
-> **Disclaimer**
-> This code base is provided for educational and research purposes. It has not
-> been audited by professional cryptographers. Use strong secrets, understand
-> the risks, and assess legal constraints in your jurisdiction before deploying
-> outside of controlled environments.
+> **Status: pre-release (0.2.0-alpha).** The protocol and code have not yet
+> been independently audited. Read the [threat model](docs/THREAT_MODEL.md)
+> before relying on neccrit, and report problems as described in
+> [SECURITY.md](SECURITY.md).
 
----
+Version 0.2 is a complete rewrite in Rust. The earlier Python prototype did
+not work and made security claims it could not keep; the reasons are
+documented in [docs/PROTOTYPE_REVIEW.md](docs/PROTOTYPE_REVIEW.md).
 
-## Table of Contents
-- [Core Capabilities](#core-capabilities)
-- [System Overview](#system-overview)
-  - [Layered Security Pipeline](#layered-security-pipeline)
-  - [Major Components](#major-components)
-  - [Optional Subsystems](#optional-subsystems)
-- [Installation](#installation)
-- [Running the Applications](#running-the-applications)
-  - [PyQt6 Desktop Client](#pyqt6-desktop-client)
-  - [Command-Line Demo](#command-line-demo)
-  - [Sharing Parameters via QR Codes](#sharing-parameters-via-qr-codes)
-- [Critical Session Parameters](#critical-session-parameters)
-- [Cover Traffic & HTTP Mimicry](#cover-traffic--http-mimicry)
-- [AngelCore Surveillance Detection](#angelcore-surveillance-detection)
-- [Build Profiles: Core vs Research](#build-profiles-core-vs-research)
-- [Troubleshooting](#troubleshooting)
-- [Development Guide](#development-guide)
-- [Project Structure](#project-structure)
-- [License & Support](#license--support)
-- [Deutsche Kurzfassung](#deutsche-kurzfassung)
+## What neccrit gives you
 
----
+* **End-to-end encryption with mutual authentication** – Noise
+  `XKpsk3_25519_ChaChaPoly_BLAKE2s` via the widely used
+  [`snow`](https://crates.io/crates/snow) library.
+* **Protection against "harvest now, decrypt later"** – every session also
+  runs an ML-KEM-768 key exchange (formally verified
+  [`libcrux`](https://github.com/cryspen/libcrux) implementation, the project
+  OpenSSH's ML-KEM code is derived from). Recorded traffic stays secret unless *both* X25519 and ML-KEM are
+  broken.
+* **Forward secrecy** – fresh ephemeral keys for every session and a key
+  ratchet after every single message.
+* **Verifiable contacts** – contacts are pinned by public key; a 60-digit
+  safety number, compared once in person or by phone, rules out a man in the
+  middle.
+* **Minimal metadata** – messages are padded to fixed sizes, no message
+  history is written to disk, peers that do not know your public key get no
+  response at all, and Tor support with per-contact circuit isolation hides
+  IP addresses.
+* **Encrypted profile** – the identity key and contact list are stored in one
+  file encrypted with XChaCha20-Poly1305 under an Argon2id-derived key.
+* **Safe display** – terminal control sequences, zero-width and bidi-override
+  characters in received messages are made visible instead of being
+  interpreted.
+* **Memory-safe implementation** – Rust with `#![forbid(unsafe_code)]`,
+  tested end to end over real sockets.
 
-## Core Capabilities
-- 🔐 **Dual-layer protection** – Tripolar spectral masking plus AES-256-GCM
-  authenticated encryption for every message.
-- 🛰️ **Peer-to-peer networking** – Direct TCP connections, connection guarding,
-  and replay protection with per-peer message histories.
-- 🧠 **Surveillance awareness (optional)** – AngelCore heuristic sensor fusion to
-  visually hide the chat when suspicious activity is detected.
-- 🕵️ **Cover traffic (optional)** – ScorpioSync generators craft dummy payloads,
-  variable intervals, and HTTP-mimicking envelopes.
-- 💻 **Modern desktop UX** – PyQt6 interface with dark cyber theme, QR code
-  parameter sharing, and runtime toggles for addons.
-- 🧪 **Tested primitives** – Unit coverage for encryption, frame guards, addon
-  generators, and rate-limit protections.
+## What neccrit deliberately does not do
 
-## System Overview
-n'éccrit revolves around `SpectralNode`, a transport engine that converts text
-into spectral fragments, adds tripolar masks, and wraps the payload inside a
-cryptographically secure handshake. The GUI, CLI, and addon layers all build on
-this node abstraction.
+* No steganography, no traffic "mimicry", no camouflage modes. These features
+  are routinely detectable, give a false sense of safety and invite misuse;
+  they were removed in the rewrite.
+* No servers: messages are delivered only while both people are online
+  (undelivered messages wait in memory while the program runs).
+* No group chats, multiple devices, attachments or history – yet.
+* It cannot protect you if your computer itself is compromised.
 
-### Layered Security Pipeline
-```
-Plaintext input
-    ↓ (FFT via OscillatorCore)
-Spectral profile
-    ↓ (tripolar_mask)
-Masked fragment
-    ↓ (JSON serialization)
-Structured payload
-    ↓ (X25519 + HKDF handshake → AES-256 session key)
-AES-256-GCM authenticated ciphertext
-    ↓ (Length-prefixed TCP frame)
-Network transport
-    ↓ (Peer decrypts & validates resonance code)
-Recovered plaintext
-```
-Key safeguards include:
-- **X25519 + HKDF handshake** to derive an ephemeral session secret salted by a
-  deterministic PSK derived from the shared password.
-- **Length-prefixed frames** with maximum size guards and replay tracking for
-  each peer (`message_ttl`, `_seen_msg_ids`).
-- **Tripolar resonance validation** so mismatched parameter sets are rejected
-  before text is reconstructed.
-
-### Major Components
-| Module | Responsibility |
-| --- | --- |
-| `spectralship_engine_duallayer.py` | `SpectralNode` networking core, X25519 handshake, replay defense, tripolar masking integration. |
-| `oscillator_core.py` | FFT-based spectral profile generator. |
-| `tripolar_mask.py` | n-pole sinusoidal masking/unmasking utilities. |
-| `crypto_layer.py` | Scrypt-based key derivation, AES-256-GCM authenticated encryption, HKDF PSK derivation. |
-| `neccrit_pyqt6.py` | Production GUI with tabs for chat, settings, QR tooling, AngelCore controls. |
-| `spectralship_demo_duallayer.py` | Minimal CLI workflow for headless testing. |
-| `addons/scorpiosync_*.py` | Cover traffic generators and adapters. |
-| `angelcore_spectralwatch.py` | Heuristic surveillance scoring and status classification. |
-| `qr_utils.py` | QR code generation/decoding helpers. |
-| `config.py` | Toggle cover-traffic behaviour (intervals, HTTP mimicry, steganography). |
-
-### Optional Subsystems
-- **AngelCore** – Fusion of CPU/RAM/mouse/microphone heuristics to report
-  `SAFE`, `UNCERTAIN`, or `ALERT`. In GUI alert mode the interface hides text
-  and disables inputs.
-- **ScorpioSync** – Periodic dummy traffic using `ENABLE_COVER_TRAFFIC`,
-  `ENABLE_HTTP_MIMICRY`, and optional zero-width steganography (off by default).
-- **QR utilities** – Export/import of session parameters to reduce transcription
-  errors when aligning peers.
-
-## Build Profiles: Core vs Research
-- **Core artifact** – Run `./scripts/build-core.sh` to produce `neccrit-core-<date>.tar.gz`. This archive omits `addons/` and
-  aligns with the default secure configuration. CI publishes and verifies that no addon modules ship in this artifact.
-- **Research artifact** – Run `./scripts/build-research.sh` to bundle optional cover-traffic and steganography modules along with
-  `RESEARCH_NOTICE.txt`. Consult [docs/USAGE_ADDONS.md](docs/USAGE_ADDONS.md) for opt-in instructions and responsible-use guidance.
+See the [threat model](docs/THREAT_MODEL.md) for the complete list.
 
 ## Installation
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/LashSesh/neccrit.git
-   cd neccrit
-   ```
-2. Create a virtual environment (recommended) and install runtime dependencies:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows use: .venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-   Core dependencies include **numpy**, **PyQt6**, **cryptography**, **qrcode**,
-   **Pillow**, and **pyzbar** for QR scanning.
-3. Optional development extras:
-   ```bash
-   pip install -r requirements-dev.txt
-   ```
 
-## Running the Applications
-### PyQt6 Desktop Client
+Requires Rust 1.94 or newer ([rustup.rs](https://rustup.rs)).
+
 ```bash
-python neccrit_pyqt6.py
+git clone https://github.com/LashSesh/neccrit.git
+cd neccrit
+cargo install --locked --path crates/neccrit-cli
 ```
-1. Configure **Local Settings**: name, listening port, resonance code, kappa and
-   theta vectors, and the shared crypto password.
-2. Configure **Peer Settings**: remote IP, remote port, and display name.
-3. (Optional) Enable **AngelCore** and/or cover traffic before starting the
-   listener.
-4. Click **Start Chat** to begin listening and use **Send** to transmit messages.
 
-### Command-Line Demo
+This installs the `neccrit` binary into `~/.cargo/bin`.
+
+## Quick start
+
+### 1. Create a profile
+
+Recommended – over Tor (install and start Tor first, e.g. `apt install tor`):
+
 ```bash
-python spectralship_demo_duallayer.py
-```
-Follow the interactive prompts to set up both peers. The demo uses the same
-`SpectralNode` engine and is handy for automation or headless hosts.
-
-### Sharing Parameters via QR Codes
-- Use **Show My QR Code** in the GUI to export the active configuration.
-- Use **Load from QR Image** to import parameters captured from a partner.
-- QR codes contain resonance code, kappa/theta arrays, ports, and passwords, so
-  share only through trusted channels.
-
-## Critical Session Parameters
-All peers must align on:
-- **Resonance code** – Integer used for tripolar resonance validation.
-- **Kappa vector** – Coupling strengths for the tripolar mask (comma-separated
-  floats, e.g. `2.5,3.1,4.7`).
-- **Theta vector** – Phase offsets for the mask (e.g. `0.1,1.3,2.1`).
-- **Crypto password** – Basis for Scrypt key derivation and handshake PSK.
-- **Ports/IPs** – Each peer listens on their local port while connecting to the
-  other's IP and port.
-
-A mismatch in any of the above will lead to decryption failures or messages being
-silently dropped as non-resonant.
-
-## Cover Traffic & HTTP Mimicry
-The ScorpioSync addon produces configurable dummy payloads, HTTP-mimicking
-frames, and optional zero-width steganography. These features ship **disabled by
-default**. Use the opt-in tooling described in [docs/USAGE_ADDONS.md](docs/USAGE_ADDONS.md)
-to enable cover traffic locally with audit logging. The core artifacts exclude
-these modules entirely.
-
-- `addons/scorpiosync_generators_complete.py` contains packet templates and
-  schedulers.
-- `example_cover_traffic_integration.py` demonstrates embedding the generators
-  into a custom transport loop.
-
-All fake traffic still traverses the cryptographic layer, blending with genuine
-messages while obscuring observable timing and volume patterns.
-
-## AngelCore Surveillance Detection
-AngelCore evaluates CPU load, RAM idle percentage, mouse entropy, timing deltas,
-and microphone noise floor to label the environment:
-- `SAFE` – Normal metrics; chat operates normally.
-- `UNCERTAIN` – Suspicious signals; GUI highlights caution but remains usable.
-- `ALERT` – High risk; GUI blacks out history, disables input, and displays
-  camouflage to deter shoulder surfing.
-
-The feature is disabled by default and can be toggled from the GUI Settings tab.
-No system-level hooks are installed unless you opt in.
-
-## Troubleshooting
-- **Port already in use** – Select a new port or terminate the conflicting
-  process (`lsof -i :<port>` on Unix).
-- **Cannot connect to peer** – Confirm IP/port, ensure the listener is active,
-  and check firewall rules. For local testing use `127.0.0.1`.
-- **Message not resonant** – Double-check resonance code, kappa, theta, and
-  password alignment across peers.
-- **GUI fails to launch (Linux)** – Install missing Qt dependencies:
-  ```bash
-  sudo apt-get install libxcb-cursor0 libxcb-xinerama0
-  ```
-
-## Development Guide
-- Run automated tests:
-  ```bash
-  python -m pytest tests/
-  ```
-- Code layout highlights:
-  - Networking safeguards live inside `SpectralNode` (`_allow_connection`,
-    `_record_message`, `_send_frame`, `_recv_frame`).
-  - Cryptographic hygiene zeroizes derived keys after use.
-  - Tests cover encryption round-trips, frame limits, replay detection, and
-    cover-traffic generator behaviour.
-- Suggested workflow:
-  1. Install dev requirements.
-  2. Use the CLI demo for deterministic scenarios.
-  3. Launch the GUI for UX validation and addon toggles.
-
-## Project Structure
-```
-neccrit/
-├── neccrit_pyqt6.py                 # PyQt6 GUI application
-├── run_neccrit.py                   # Convenience launcher
-├── spectralship_engine_duallayer.py # P2P engine & security pipeline
-├── spectralship_demo_duallayer.py   # CLI demo
-├── oscillator_core.py               # FFT spectrum helper
-├── tripolar_mask.py                 # Tripolar masking math
-├── crypto_layer.py                  # Encryption helpers & handshake PSK
-├── angelcore_spectralwatch.py       # Surveillance heuristics
-├── qr_utils.py                      # QR encode/decode utilities
-├── entropy_seed.py                  # Entropy helpers
-├── config.py                        # Addon configuration switches
-├── addons/                          # ScorpioSync cover-traffic modules
-├── docs/ADDON_SCORPIOSYNC.md        # Detailed addon documentation
-├── tests/                           # Pytest suite
-└── QUICKSTART.md                    # GUI-oriented quick start guide
+neccrit init --tor --name alice
 ```
 
-## License & Support
-- Licensed under the terms specified in [`LICENSE`](LICENSE).
-- See [`SECURITY.md`](SECURITY.md) for vulnerability reporting guidance.
-- Use GitHub issues for bug reports and feature discussions.
+Add an onion service to your `torrc` (usually `/etc/tor/torrc`) and restart
+Tor:
+
+```
+HiddenServiceDir /var/lib/tor/neccrit/
+HiddenServicePort 7878 127.0.0.1:7878
+```
+
+Then tell neccrit its address:
+
+```bash
+neccrit config --address "$(sudo cat /var/lib/tor/neccrit/hostname):7878"
+```
+
+Alternatively, without Tor (your IP address is visible to your contacts and
+to the network), e.g. inside a LAN:
+
+```bash
+neccrit init --name alice --listen 0.0.0.0:7878 --address 192.168.1.20:7878
+```
+
+You choose a passphrase (at least 10 characters; a sequence of random words
+works well). It protects the profile file.
+
+### 2. Exchange invite codes
+
+```bash
+neccrit invite                       # prints neccrit:...
+neccrit contact add bob neccrit:...  # paste Bob's code
+```
+
+The invite code is not secret, but it is also **not authenticated**:
+whoever can tamper with the channel you send it over could swap it.
+
+### 3. Verify each other – do not skip this
+
+```bash
+neccrit contact verify bob
+```
+
+Both of you see the same 60-digit safety number. Compare **all** digits over
+a channel where you can be sure you are talking to the right person – in
+person, or on a call where you recognise the voice. If they match, confirm;
+if not, someone may be intercepting: remove the contact and exchange codes
+again another way. Unverified contacts are clearly marked in the chat.
+
+### 4. Chat
+
+```bash
+neccrit chat bob
+```
+
+Inside the chat:
+
+| Input | Effect |
+| --- | --- |
+| text | send to the current contact |
+| `/to <name>` | switch contact (connects in the background) |
+| `/contacts` | contacts with online status and queued messages |
+| `/safety [name]` | show the safety number |
+| `/quit` | leave (asks again if messages are still undelivered) |
+| `//text` | send a message that starts with `/` |
+
+`✓ delivered` confirms that the message arrived on your contact's device.
+
+## Command reference
+
+```
+neccrit init [--tor] [--name N] [--listen ADDR] [--address HOST:PORT]
+neccrit status
+neccrit invite
+neccrit config [--name N|none] [--listen ADDR|none] [--address HOST:PORT|none] [--socks5 ADDR|none]
+neccrit contact add <name> <invite-code|public-key> [--address HOST:PORT]
+neccrit contact list | show <name> | verify <name> | unverify <name>
+neccrit contact rename <old> <new> | set-address <name> <addr|none> | remove <name>
+neccrit passwd
+neccrit chat [name]
+```
+
+Global options: `--profile DIR` (or `NECCRIT_PROFILE`) selects the profile
+directory, by default `~/.local/share/neccrit` (Linux),
+`~/Library/Application Support/neccrit` (macOS) or `%APPDATA%\neccrit`
+(Windows). `--passphrase-file FILE` (or `NECCRIT_PASSPHRASE_FILE`) reads the
+passphrase from a file for scripting.
+
+Commands that change the profile take a lock, so concurrent changes cannot
+overwrite each other. A running chat does not pick up contacts added
+meanwhile; restart it.
+
+## How it works
+
+```
+ Alice                                                     Bob
+ ─────                                                     ───
+ profile.neccrit  (Argon2id + XChaCha20-Poly1305)          profile.neccrit
+        │                                                         │
+        │   TCP (direct or via Tor SOCKS5, per-contact circuit)   │
+        │ ── e, es        + ML-KEM-768 public key ──────────────▶ │
+        │ ◀─ e, ee        + ML-KEM-768 ciphertext ─────────────── │
+        │ ── s, se, psk   (psk = ML-KEM shared secret) ─────────▶ │  is Alice a contact?
+        │ ◀─ key confirmation ─────────────────────────────────── │
+        │                                                         │
+        │ ◀═ padded messages, receipts, keepalives ════════════▶ │  rekey after every message
+```
+
+The full specification, including the rationale for each choice, is in
+[docs/PROTOCOL.md](docs/PROTOCOL.md).
+
+## Project layout
+
+```
+crates/neccrit-core   protocol, key management, encrypted storage, networking (library)
+crates/neccrit-cli    the `neccrit` command line client
+docs/                 protocol specification, threat model, prototype review
+```
+
+## Development
+
+```bash
+cargo fmt --all --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
+cargo deny check            # requires `cargo install cargo-deny`
+```
+
+The test suite covers the handshake under attack (wrong keys, strangers,
+probing, tampering, replay), the wire format (including property-based
+tests), the encrypted profile, the networking node over real TCP sockets
+(including offline queuing, simultaneous dialing and a SOCKS5 proxy) and the
+real binary in a two-process chat.
+
+Contributions are welcome. Changes to cryptography or the protocol need a
+written rationale in `docs/PROTOCOL.md` and tests that demonstrate failure on
+attack, not just success.
+
+## License
+
+Apache-2.0, see [LICENSE](LICENSE).
 
 ---
 
 ## Deutsche Kurzfassung
 
-### Überblick
-n'éccrit ist ein experimentelles P2P-Chat-System, das Tripolar-Maskierung mit
-AES-256-GCM-Authentifizierungsverschlüsselung kombiniert. Es bietet eine
-PyQt6-Oberfläche,
-Kommandozeilen-Demo, optionale Cover-Traffic-Generatoren (ScorpioSync) und das
-Surveillance-Monitoring AngelCore.
+**neccrit** ist ein Ende-zu-Ende-verschlüsselter Peer-to-Peer-Messenger für
+Menschen, die sich kennen – ohne Server, Konten oder Telefonnummern.
 
-### Hauptfunktionen
-- Duale Sicherheitslage: Spektrale Tripolar-Maskierung + kryptografische
-  Verschlüsselung pro Nachricht.
-- Direkte Peer-zu-Peer-Verbindungen mit Ratenbegrenzung, Replay-Schutz und
-  Resonanzprüfung.
-- Optionale Tarnmodule: Cover-Traffic mit HTTP-Mimikry sowie AngelCore zur
-  Erkennung verdächtiger Systemaktivitäten.
-- QR-Codes zum sicheren Austausch der Sitzungsparameter.
+* **Verschlüsselung:** Noise-Protokoll (`XKpsk3`, Bibliothek `snow`) mit
+  gegenseitiger Authentifizierung, kombiniert mit ML-KEM-768 (formal
+  verifizierte `libcrux`-Implementierung) gegen spätere Entschlüsselung durch
+  Quantencomputer. Neue Schlüssel für jede Sitzung und Schlüsselfortschaltung
+  nach jeder Nachricht.
+* **Kontakte** werden per Einladungscode hinzugefügt und **müssen** einmal über
+  eine 60-stellige Sicherheitsnummer verifiziert werden (persönlich oder per
+  Telefonat): `neccrit contact verify <name>`.
+* **Metadaten:** gepolsterte Nachrichtengrößen, kein Nachrichtenverlauf auf
+  der Festplatte, optional Tor (Onion-Service, getrennte Circuits pro
+  Kontakt).
+* **Profil** (Identitätsschlüssel, Kontakte) liegt verschlüsselt in einer
+  Datei (Argon2id + XChaCha20-Poly1305).
+* **Bewusst nicht enthalten:** Steganographie, Traffic-Tarnung,
+  „Überwachungserkennung“ – diese Funktionen des Prototyps waren wirkungslos
+  oder irreführend und wurden entfernt (Begründung in
+  [docs/PROTOTYPE_REVIEW.md](docs/PROTOTYPE_REVIEW.md)).
+* **Status:** Vorabversion, noch nicht unabhängig auditiert.
 
-### Installation & Start
-1. Repository klonen und Abhängigkeiten installieren:
-   ```bash
-   git clone https://github.com/LashSesh/neccrit.git
-   cd neccrit
-   python -m venv .venv && source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-2. GUI starten:
-   ```bash
-   python neccrit_pyqt6.py
-   ```
-3. Parameter beider Peers abstimmen (Resonanzcode, Kappa/Theta-Vektoren,
-   Passwort, Ports/IP).
-4. Optional AngelCore aktivieren und Cover-Traffic über `config.py`
-   konfigurieren.
-
-### Fehlerbehebung
-- Port belegt → neuen Port wählen oder Prozess beenden.
-- Keine Verbindung → IP/Port prüfen, Firewall freischalten, Listener starten.
-- "Message not resonant" → Parameter erneut vergleichen, identische Passwörter
-  verwenden.
-- GUI startet nicht (Linux) → `sudo apt-get install libxcb-cursor0 libxcb-xinerama0`.
-
-### Entwicklung
-- Tests über `python -m pytest tests/` ausführen.
-- Kernlogik befindet sich in `spectralship_engine_duallayer.py`, die Kryptofunktionen
-  in `crypto_layer.py`, Maskierung in `tripolar_mask.py`.
-- Detaillierte Anleitung zum Cover-Traffic im Ordner `docs/`.
-
-Weitere Informationen, Lizenzhinweise und Supportoptionen siehe oben in der
-englischen Hauptdokumentation.
+Schnellstart: `neccrit init --tor --name alice`, Onion-Service in Tor
+einrichten (siehe oben), `neccrit invite` mit dem Kontakt austauschen,
+`neccrit contact add bob neccrit:…`, `neccrit contact verify bob`,
+`neccrit chat bob`.
