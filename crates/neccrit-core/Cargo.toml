@@ -1,0 +1,31 @@
+[package]
+name = "neccrit-core"
+description = "Protocol, key management and networking core of the neccrit end-to-end encrypted messenger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+argon2 = "0.5"
+blake2 = "0.10"
+chacha20poly1305 = "0.10"
+data-encoding = "2.11"
+getrandom = "0.3"
+libcrux-ml-kem = { version = "0.0.11", default-features = false, features = ["mlkem768", "std"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+snow = "0.10"
+thiserror = "2.0"
+tokio = { version = "1.54", features = ["net", "io-util", "time", "sync", "rt", "macros"] }
+tokio-socks = "0.5.3"
+zeroize = { version = "1.9", features = ["zeroize_derive"] }
+
+[dev-dependencies]
+proptest = "1.12"
+tempfile = "3.27"
+tokio = { version = "1.54", features = ["rt-multi-thread"] }
+
+[lints]
+workspace = true
