@@ -59,25 +59,36 @@ pub fn validate_contact_name(name: &str) -> Result<String> {
     Ok(name.to_owned())
 }
 
-/// Unicode format characters that are invisible or reorder text (bidi
-/// controls, zero-width characters, tag characters). They are rejected in
-/// names and must be made visible when displaying untrusted text.
+/// Characters that are invisible, reorder text or break lines in ways a
+/// reader does not see: all Unicode `Default_Ignorable_Code_Point`s, all
+/// format characters (category Cf) and the line/paragraph separators
+/// (Zl, Zp). They are rejected in names and must be made visible when
+/// displaying untrusted text.
 pub fn is_invisible_format_char(c: char) -> bool {
     matches!(c,
         '\u{00AD}'
         | '\u{034F}'
+        | '\u{0600}'..='\u{0605}'
         | '\u{061C}'
+        | '\u{06DD}'
+        | '\u{070F}'
+        | '\u{0890}'..='\u{0891}'
+        | '\u{08E2}'
         | '\u{115F}'..='\u{1160}'
         | '\u{17B4}'..='\u{17B5}'
         | '\u{180B}'..='\u{180F}'
         | '\u{200B}'..='\u{200F}'
-        | '\u{202A}'..='\u{202E}'
+        | '\u{2028}'..='\u{202E}'
         | '\u{2060}'..='\u{206F}'
         | '\u{3164}'
         | '\u{FE00}'..='\u{FE0F}'
         | '\u{FEFF}'
         | '\u{FFA0}'
         | '\u{FFF0}'..='\u{FFFB}'
+        | '\u{110BD}'
+        | '\u{110CD}'
+        | '\u{13430}'..='\u{1343F}'
+        | '\u{1BCA0}'..='\u{1BCA3}'
         | '\u{1D173}'..='\u{1D17A}'
         | '\u{E0000}'..='\u{E0FFF}'
     )

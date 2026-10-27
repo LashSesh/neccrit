@@ -25,6 +25,19 @@ prototype are not compatible.
 - Specification (`docs/PROTOCOL.md`), threat model, CI with rustfmt, clippy,
   tests and `cargo deny`.
 
+### Hardening after internal review
+- Inbound rate limits are per contact and survive reconnects; replaced
+  sessions are terminated after a grace period.
+- A newer session replaces a stale one outside the simultaneous-dial window,
+  so a peer can reconnect after a network change without waiting for the
+  idle timeout; reconnect backoff only resets after stable sessions.
+- Separate reader/writer tasks per session (no write deadlock when both
+  sides flush large queues).
+- First handshake message must arrive within 10 s.
+- Public keys of small order are rejected.
+- All default-ignorable, format and line/paragraph-separator characters are
+  made visible; long blank runs are collapsed; sender labels are highlighted.
+
 ### Removed
 - Zero-width steganography, HTTP "mimicry" and cover-traffic markers.
 - "AngelCore" surveillance detection (it was driven by random numbers).

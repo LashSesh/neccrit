@@ -7,7 +7,7 @@ use anyhow::{Result, bail};
 use neccrit_core::{ContactRef, Event, Node, NodeConfig, NodeHandle, Profile, PublicKey, SafetyNumber};
 use tokio::sync::mpsc;
 
-use crate::display::sanitize;
+use crate::display::{Style, sanitize};
 
 const HELP: &str = "\
 Commands:
@@ -31,6 +31,7 @@ struct Ui {
     current: Option<PublicKey>,
     unreachable_reported: HashSet<PublicKey>,
     quit_requested: bool,
+    style: Style,
 }
 
 fn now() -> String {
@@ -65,6 +66,7 @@ pub async fn run(profile: Profile, initial: Option<String>) -> Result<()> {
         current: None,
         unreachable_reported: HashSet::new(),
         quit_requested: false,
+        style: Style::detect(),
     };
     println!("* type /help for commands");
     if let Some(name) = initial {
@@ -230,7 +232,9 @@ impl Ui {
             Event::Disconnected { contact } => println!("* {} went offline", self.name(&contact)),
             Event::Message { contact, text, .. } => {
                 let marker = if self.current == Some(contact) { "" } else { "  ← /to to reply" };
-                println!("[{}] {}: {}{marker}", now(), self.label(&contact), sanitize(&text, "      | "));
+                let verified = self.profile.contact_by_key(&contact).is_some_and(|c| c.verified);
+                let sender = self.style.sender(&format!("[{}] {}:", now(), self.label(&contact)), verified);
+                println!("{sender} {}{marker}", sanitize(&text, "      | "));
             }
             Event::Delivered { contact, id } => println!("  ✓ delivered to {} [{id}]", self.name(&contact)),
             Event::ConnectFailed { contact, error, .. } => {

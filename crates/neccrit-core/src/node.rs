@@ -18,15 +18,15 @@ use std::time::Duration;
 
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, mpsc, oneshot};
-use tokio::task::JoinHandle;
-use tokio::time::timeout;
+use tokio::task::{AbortHandle, JoinHandle};
+use tokio::time::{Instant, timeout};
 
 use crate::address::PeerAddress;
 use crate::error::{Error, Result};
 use crate::handshake::{self, SecureChannel};
 use crate::identity::{Identity, PublicKey};
 use crate::random;
-use crate::session::{self, BoxStream, SessionCmd, SessionReport, SessionTiming};
+use crate::session::{self, BoxStream, RateLimits, SessionCmd, SessionReport, SessionTiming, SharedLimits};
 use crate::wire::{MessageId, WireMessage, validate_text};
 
 /// Maximum number of unacknowledged messages per contact.
@@ -34,6 +34,13 @@ pub const MAX_OUTBOX: usize = 100;
 const MAX_PENDING_HANDSHAKES: usize = 32;
 const RECENT_IDS: usize = 4096;
 const MAX_UNKNOWN_PEER_REPORTS: usize = 64;
+/// A stranger must send the first handshake message within this time, so
+/// idle connections cannot hold handshake slots for long.
+const FIRST_MESSAGE_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a replaced session may still flush its close message.
+const REPLACED_SESSION_GRACE: Duration = Duration::from_secs(2);
+/// A session that lasted at least this long resets the reconnect backoff.
+const STABLE_SESSION: Duration = Duration::from_secs(30);
 
 /// Runtime configuration of a [`Node`].
 #[derive(Clone, Debug)]
@@ -241,7 +248,21 @@ struct ActiveSession {
     id: u64,
     /// Long-term key of the side that initiated the session.
     initiator: PublicKey,
+    established: Instant,
     tx: mpsc::UnboundedSender<SessionCmd>,
+    task: AbortHandle,
+}
+
+impl ActiveSession {
+    /// Ask the session to close and make sure it is gone shortly after,
+    /// even if its connection is stuck.
+    fn retire(self) {
+        let _ = self.tx.send(SessionCmd::Close);
+        tokio::spawn(async move {
+            tokio::time::sleep(REPLACED_SESSION_GRACE).await;
+            self.task.abort();
+        });
+    }
 }
 
 struct ContactState {
@@ -256,6 +277,8 @@ struct ContactState {
     /// SOCKS credentials used for Tor stream isolation (one circuit per
     /// contact, unlinkable across contacts).
     isolation: String,
+    /// Inbound rate limits, shared by all sessions of this contact.
+    limits: SharedLimits,
 }
 
 impl ContactState {
@@ -271,6 +294,7 @@ impl ContactState {
             retry_attempt: 0,
             want_connection: false,
             isolation: token.iter().map(|b| format!("{b:02x}")).collect(),
+            limits: RateLimits::shared(),
         })
     }
 
@@ -349,7 +373,10 @@ impl Actor {
             }
             Command::Connect { contact } => {
                 if let Some(c) = self.contacts.get_mut(&contact) {
+                    // An explicit request skips any pending backoff.
                     c.want_connection = true;
+                    c.retry_attempt = 0;
+                    c.retry_scheduled = false;
                     self.ensure_dial(contact);
                 }
             }
@@ -455,20 +482,27 @@ impl Actor {
         }
         let Some(c) = self.contacts.get_mut(&remote) else { return };
 
-        // If both sides dialed at the same time there are two sessions. Both
-        // peers keep the one initiated by the numerically smaller key, so
-        // they converge on the same session. A newer session in the same
-        // direction replaces the old one (the peer reconnected).
+        // If both sides dialed at the same time there are two sessions that
+        // were established within one handshake time of each other. Both
+        // peers then keep the one initiated by the numerically smaller key,
+        // so they converge on the same session. Otherwise the newer session
+        // wins: the peer only dials when it has no session, so an older one
+        // is dead from its point of view (e.g. after a network change).
+        let race_window = self.shared.config.handshake_timeout;
         let keep_new = match &c.session {
             None => true,
-            Some(existing) => existing.initiator == initiator || initiator < existing.initiator,
+            Some(existing) => {
+                existing.initiator == initiator
+                    || existing.established.elapsed() > race_window
+                    || initiator < existing.initiator
+            }
         };
         if !keep_new {
             return; // dropping `stream` closes the connection
         }
         let was_connected = c.session.is_some();
         if let Some(old) = c.session.take() {
-            let _ = old.tx.send(SessionCmd::Close);
+            old.retire();
         }
 
         let session_id = self.next_session_id;
@@ -478,8 +512,6 @@ impl Actor {
         for (id, text) in &c.outbox {
             let _ = tx.send(SessionCmd::Send(WireMessage::Text { id: *id, body: text.clone() }));
         }
-        c.session = Some(ActiveSession { id: session_id, initiator, tx });
-        c.retry_attempt = 0;
 
         let cfg = &self.shared.config;
         let timing = SessionTiming {
@@ -488,9 +520,16 @@ impl Actor {
             write_timeout: cfg.handshake_timeout,
         };
         let internal = self.internal_tx.clone();
-        let task = tokio::spawn(session::run(channel, stream, rx, timing, move |report| {
+        let task = tokio::spawn(session::run(channel, stream, rx, timing, c.limits.clone(), move |report| {
             let _ = internal.send(Internal::Session { contact: remote, session_id, report });
         }));
+        c.session = Some(ActiveSession {
+            id: session_id,
+            initiator,
+            established: Instant::now(),
+            tx,
+            task: task.abort_handle(),
+        });
         self.session_tasks.retain(|t| !t.is_finished());
         self.session_tasks.push(task);
         if !was_connected {
@@ -514,7 +553,11 @@ impl Actor {
             }
             SessionReport::Closed => {
                 if c.session.as_ref().is_some_and(|s| s.id == session_id) {
-                    c.session = None;
+                    // Only a session that lasted resets the backoff, so a peer
+                    // that keeps accepting and dropping us is not hammered.
+                    if c.session.take().is_some_and(|s| s.established.elapsed() >= STABLE_SESSION) {
+                        c.retry_attempt = 0;
+                    }
                     self.emit(Event::Disconnected { contact });
                     self.schedule_retry(contact);
                 }
@@ -531,13 +574,16 @@ impl Actor {
                 let _ = s.tx.send(SessionCmd::Close);
             }
         }
-        let tasks = std::mem::take(&mut self.session_tasks);
+        let mut tasks = std::mem::take(&mut self.session_tasks);
         let _ = timeout(Duration::from_secs(3), async {
-            for t in tasks {
+            for t in &mut tasks {
                 let _ = t.await;
             }
         })
         .await;
+        for t in tasks {
+            t.abort();
+        }
     }
 }
 
@@ -603,9 +649,9 @@ async fn accept_loop(listener: TcpListener, shared: Arc<Shared>, internal: mpsc:
             let _ = stream.set_nodelay(true);
             let mut stream: BoxStream = Box::new(stream);
             let allowed = |key: &PublicKey| shared.allowed.contains(key);
-            let result =
-                timeout(shared.config.handshake_timeout, handshake::respond(&mut stream, &shared.identity, allowed))
-                    .await;
+            let first_message = FIRST_MESSAGE_TIMEOUT.min(shared.config.handshake_timeout);
+            let respond = handshake::respond(&mut stream, &shared.identity, first_message, allowed);
+            let result = timeout(shared.config.handshake_timeout, respond).await;
             match result {
                 Ok(Ok(channel)) => {
                     let _ = internal.send(Internal::Established { channel, stream, dialed: None });

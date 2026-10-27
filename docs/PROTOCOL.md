@@ -92,11 +92,14 @@ XKpsk3:
 ```
 
 1. The **initiator** knows the responder's static key from the contact
-   entry. It generates a fresh ML-KEM-768 key pair `(dk, ek)` and sends
+   entry. (Public keys of small order, for which every X25519 result is zero,
+   are rejected wherever keys are parsed.) It generates a fresh ML-KEM-768 key pair `(dk, ek)` and sends
    message 1 with `ek` as payload (1232 bytes on the wire).
-2. The **responder** processes message 1. Decryption of the payload only
-   succeeds if the initiator used the responder's real static key; otherwise
-   the connection is closed without any response. The responder checks `ek`
+2. The **responder** processes message 1, which must arrive within 10 s of
+   the TCP connection. Decryption of the payload only succeeds if the
+   initiator used the responder's real static key; otherwise the connection
+   is closed without any response. At most 32 handshakes are processed
+   concurrently. The responder checks `ek`
    (FIPS 203 encapsulation key check), computes `(ct, ss) = Encaps(ek)`, sets
    `ss` as the PSK for the `psk` token and sends message 2 with `ct`
    (1136 bytes).
@@ -160,17 +163,36 @@ missing `0x80` marker, trailing bytes, invalid UTF-8, unknown types.
   contact) and re-sends them on every new session until a receipt arrives.
 * `KeepAlive` is sent every 25 s; a session with no incoming frame for 80 s
   is closed. Keepalives, receipts and short texts share the 256-byte bucket.
-* Inbound frames are rate limited per session (token bucket, burst 512,
-  64/s); exceeding the limit closes the session.
+* Inbound traffic is rate limited **per contact**, with budgets shared by all
+  of that contact's sessions so that reconnecting does not refill them:
+  frames burst 512 / 64 per second, text messages burst 150 / 2 per second
+  (the burst covers flushing a full outbox). Exceeding a budget closes the
+  session.
+* Each session reads, writes and processes in separate tasks; a peer that is
+  slow to read can never block reading (no mutual write deadlock when both
+  sides flush large queues). A write that does not complete within the
+  handshake timeout ends the session.
 
 ### 3.3 Session selection
 
-Both contacts may dial each other at the same time and end up with two
-sessions. Each side then keeps the session whose **initiator has the
-lexicographically smaller static public key**; a newer session initiated by
-the same side as the existing one replaces it (the peer reconnected). Both
-peers apply the same rule and converge on the same session. Pending messages
-are re-sent on the surviving session; duplicates are suppressed by id.
+A node dials a contact only while it has no session with them. When a new
+session arrives while one exists:
+
+* if the existing session is younger than the handshake timeout, both
+  contacts dialled at (roughly) the same time: each side keeps the session
+  whose **initiator has the lexicographically smaller static public key**, so
+  both converge on the same session;
+* otherwise the **newer session wins**: the peer dialled because, from its
+  point of view, the old session is gone (for example after a network
+  change), even if our end has not noticed yet;
+* a newer session initiated by the same side always replaces the old one.
+
+A replaced session is asked to close and is terminated after a two-second
+grace period. Pending messages are re-sent on the surviving session;
+duplicates are suppressed by id. The reconnect backoff (1 s doubling to 60 s,
+plus jitter) is only reset by a session that lasted at least 30 s or by an
+explicit user request, so a peer that keeps accepting and dropping
+connections is not hammered.
 
 ### 3.4 Tor and SOCKS5
 

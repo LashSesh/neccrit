@@ -30,6 +30,8 @@
 //!   session established once it decrypted it, so a rejected initiator never
 //!   believes it is connected.
 
+use std::time::Duration;
+
 use libcrux_ml_kem::mlkem768;
 use tokio::io::{AsyncRead, AsyncWrite};
 use zeroize::{Zeroize, Zeroizing};
@@ -172,7 +174,15 @@ where
 
 /// Run the responder side of the handshake. `is_allowed` is consulted with
 /// the initiator's authenticated static key before the session is accepted.
-pub async fn respond<S, F>(stream: &mut S, identity: &Identity, is_allowed: F) -> Result<SecureChannel>
+///
+/// `first_message_timeout` bounds how long an unauthenticated connection may
+/// stay idle before sending message 1.
+pub async fn respond<S, F>(
+    stream: &mut S,
+    identity: &Identity,
+    first_message_timeout: Duration,
+    is_allowed: F,
+) -> Result<SecureChannel>
 where
     S: AsyncRead + AsyncWrite + Unpin + ?Sized,
     F: FnOnce(&PublicKey) -> bool,
@@ -180,7 +190,9 @@ where
     let mut hs = builder()?.local_private_key(identity.secret_bytes())?.build_responder()?;
 
     // Message 1 only decrypts if the initiator used our real static key.
-    let msg1 = read_frame(stream, MSG1_LEN).await?;
+    let msg1 = tokio::time::timeout(first_message_timeout, read_frame(stream, MSG1_LEN))
+        .await
+        .map_err(|_| Error::Timeout)??;
     let mut payload = vec![0u8; msg1.len()];
     let n = hs.read_message(&msg1, &mut payload)?;
     if n != MLKEM_PK_LEN {
@@ -232,6 +244,8 @@ mod tests {
     use crate::wire::MessageId;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+    const T: Duration = Duration::from_secs(5);
+
     async fn pair(
         initiator: &Identity,
         expected_remote: &PublicKey,
@@ -245,7 +259,7 @@ mod tests {
             r
         };
         let r = async {
-            let r = respond(&mut b, responder, |k| Some(*k) == allowed).await;
+            let r = respond(&mut b, responder, T, |k| Some(*k) == allowed).await;
             drop(b);
             r
         };
@@ -320,7 +334,7 @@ mod tests {
         // Someone who does not know Bob's public key cannot make him answer.
         let bob = Identity::generate().unwrap();
         let (mut probe, mut b) = tokio::io::duplex(1 << 16);
-        let resp = tokio::spawn(async move { respond(&mut b, &bob, |_| true).await });
+        let resp = tokio::spawn(async move { respond(&mut b, &bob, T, |_| true).await });
         let junk = vec![0x42u8; MSG1_LEN];
         probe.write_all(&(junk.len() as u16).to_be_bytes()).await.unwrap();
         probe.write_all(&junk).await.unwrap();
@@ -328,6 +342,16 @@ mod tests {
         let mut rest = Vec::new();
         probe.read_to_end(&mut rest).await.unwrap();
         assert!(rest.is_empty(), "responder must not send anything to a prober");
+    }
+
+    #[tokio::test]
+    async fn idle_connection_times_out() {
+        let bob = Identity::generate().unwrap();
+        let (_idle, mut b) = tokio::io::duplex(1 << 16);
+        let started = std::time::Instant::now();
+        let result = respond(&mut b, &bob, Duration::from_millis(200), |_| true).await;
+        assert!(matches!(result, Err(Error::Timeout)), "{result:?}");
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[tokio::test]

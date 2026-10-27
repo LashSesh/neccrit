@@ -319,3 +319,95 @@ async fn connects_through_socks5_proxy_to_onion() {
     alice.handle.shutdown().await;
     bob.handle.shutdown().await;
 }
+
+/// Two identities ordered so that the first has the smaller public key.
+fn ordered_pair() -> (Identity, Identity) {
+    loop {
+        let a = Identity::generate().unwrap();
+        let b = Identity::generate().unwrap();
+        if a.public_key() < b.public_key() {
+            return (a, b);
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reconnect_replaces_a_dead_session() {
+    // Alice (smaller key) holds a session she initiated whose other end is
+    // dead but whose TCP connection is still open. When Bob comes back and
+    // dials her, the new session must win instead of waiting for the idle
+    // timeout.
+    let (alice_id, bob_id) = ordered_pair();
+    let (alice_key, bob_key) = (*alice_id.public_key(), *bob_id.public_key());
+
+    let dead_bob = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let dead_bob_addr = dead_bob.local_addr().unwrap();
+    let zombie_identity = bob_id.clone();
+    let zombie = tokio::spawn(async move {
+        let (mut stream, _) = dead_bob.accept().await.unwrap();
+        let first = std::time::Duration::from_secs(5);
+        let channel =
+            neccrit_core::handshake::respond(&mut stream, &zombie_identity, first, |k| *k == alice_key).await.unwrap();
+        // Keep the connection open but never read or write again.
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        drop((channel, stream));
+    });
+
+    let mut cfg = config(localhost());
+    cfg.handshake_timeout = Duration::from_secs(1);
+    let mut alice = start(alice_id, vec![ContactRef { public_key: bob_key, address: addr(dead_bob_addr) }], cfg).await;
+    let alice_addr = listening(&mut alice.events).await;
+    alice.handle.connect(bob_key).unwrap();
+    expect(&mut alice.events, "first session", |e| *e == Event::Connected { contact: bob_key }).await;
+
+    // Outlive the simultaneous-dial window, then Bob reappears.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let mut bob =
+        start(bob_id, vec![ContactRef { public_key: alice_key, address: addr(alice_addr) }], config(None)).await;
+    let id = bob.handle.send_text(alice_key, "back again".into()).await.unwrap();
+    let got = expect(&mut alice.events, "message", |e| matches!(e, Event::Message { .. })).await;
+    assert!(matches!(got, Event::Message { ref text, .. } if text == "back again"));
+    expect(&mut bob.events, "receipt", |e| *e == Event::Delivered { contact: alice_key, id }).await;
+    zombie.abort();
+    alice.handle.shutdown().await;
+    bob.handle.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn large_queues_flush_in_both_directions() {
+    let alice_id = Identity::generate().unwrap();
+    let bob_id = Identity::generate().unwrap();
+    let (alice_key, bob_key) = (*alice_id.public_key(), *bob_id.public_key());
+    let body = "x".repeat(8000);
+
+    // Bob cannot reach Alice, so his messages wait in his outbox.
+    let mut bob = start(bob_id, vec![ContactRef { public_key: alice_key, address: None }], config(localhost())).await;
+    let bob_addr = listening(&mut bob.events).await;
+    for _ in 0..100 {
+        bob.handle.send_text(alice_key, body.clone()).await.unwrap();
+    }
+    // Alice queues as many; as soon as she connects both sides flush ~1.6 MB.
+    let mut alice =
+        start(alice_id, vec![ContactRef { public_key: bob_key, address: addr(bob_addr) }], config(None)).await;
+    for _ in 0..100 {
+        alice.handle.send_text(bob_key, body.clone()).await.unwrap();
+    }
+
+    async fn drain(peer: &mut Peer, other: PublicKey) {
+        let (mut received, mut delivered) = (0, 0);
+        while received < 100 || delivered < 100 {
+            match expect(&mut peer.events, "traffic", |e| matches!(e, Event::Message { .. } | Event::Delivered { .. }))
+                .await
+            {
+                Event::Message { contact, .. } if contact == other => received += 1,
+                Event::Delivered { contact, .. } if contact == other => delivered += 1,
+                ev => panic!("unexpected {ev:?}"),
+            }
+        }
+    }
+    tokio::join!(drain(&mut alice, bob_key), drain(&mut bob, alice_key));
+    assert_eq!(alice.handle.pending(bob_key).await.unwrap(), 0);
+    assert_eq!(bob.handle.pending(alice_key).await.unwrap(), 0);
+    alice.handle.shutdown().await;
+    bob.handle.shutdown().await;
+}

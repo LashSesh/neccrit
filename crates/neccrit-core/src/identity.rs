@@ -17,12 +17,14 @@ pub const KEY_LEN: usize = 32;
 pub struct PublicKey([u8; KEY_LEN]);
 
 impl PublicKey {
-    pub fn from_bytes(bytes: [u8; KEY_LEN]) -> Self {
-        Self(bytes)
-    }
-
+    /// Parse a public key. Rejects keys of small order (such as all zeros),
+    /// for which every Diffie-Hellman result is zero: anyone could
+    /// impersonate a "contact" with such a key.
     pub fn from_slice(bytes: &[u8]) -> Result<Self> {
         let arr: [u8; KEY_LEN] = bytes.try_into().map_err(|_| Error::InvalidPublicKey)?;
+        if is_small_order(&arr)? {
+            return Err(Error::InvalidPublicKey);
+        }
         Ok(Self(arr))
     }
 
@@ -48,6 +50,23 @@ impl PublicKey {
         let full = self.to_base32();
         format!("{}-{}-{}-{}", &full[0..4], &full[4..8], &full[8..12], &full[12..16])
     }
+}
+
+/// X25519 clamps scalars to multiples of the cofactor, so the shared secret
+/// with a point of small order is zero for *every* private key. Checking one
+/// exchange with a throwaway key therefore detects all such points, including
+/// non-canonical encodings.
+fn is_small_order(key: &[u8; KEY_LEN]) -> Result<bool> {
+    use snow::params::DHChoice;
+    use snow::resolvers::{CryptoResolver, DefaultResolver};
+
+    let resolver = DefaultResolver;
+    let mut dh = resolver.resolve_dh(&DHChoice::Curve25519).ok_or(Error::Handshake)?;
+    let mut rng = resolver.resolve_rng().ok_or(Error::Rng)?;
+    dh.generate(&mut *rng).map_err(|_| Error::Rng)?;
+    let mut shared = zeroize::Zeroizing::new([0u8; KEY_LEN]);
+    dh.dh(key, shared.as_mut()).map_err(|_| Error::InvalidPublicKey)?;
+    Ok(shared.iter().all(|&b| b == 0))
 }
 
 impl fmt::Debug for PublicKey {
@@ -128,6 +147,36 @@ mod tests {
         assert_eq!(text.len(), 52);
         assert_eq!(PublicKey::from_base32(&text).unwrap(), *id.public_key());
         assert_eq!(PublicKey::from_base32(&text.to_uppercase()).unwrap(), *id.public_key());
+    }
+
+    #[test]
+    fn rejects_small_order_points() {
+        let hex = |s: &str| -> [u8; 32] {
+            let v: Vec<u8> = (0..64).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect();
+            v.try_into().unwrap()
+        };
+        let mut one = [0u8; 32];
+        one[0] = 1;
+        let small_order = [
+            [0u8; 32],
+            one,
+            hex("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800"),
+            hex("5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157"),
+            hex("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+            hex("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+            hex("eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+            // The same points with the (ignored, RFC 7748) top bit set.
+            hex("0000000000000000000000000000000000000000000000000000000000000080"),
+            hex("0100000000000000000000000000000000000000000000000000000000000080"),
+            hex("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b880"),
+            hex("5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f11d7"),
+            hex("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"),
+        ];
+        for key in small_order {
+            assert!(PublicKey::from_slice(&key).is_err(), "accepted {key:02x?}");
+        }
+        let b32 = BASE32_NOPAD.encode(&[0u8; 32]).to_ascii_lowercase();
+        assert!(PublicKey::from_base32(&b32).is_err());
     }
 
     #[test]
